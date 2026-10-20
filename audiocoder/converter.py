@@ -88,11 +88,11 @@ class ConversionRunner:
 
     def run(self, job: ConversionJob, progress: Callable[[float], None] | None = None,
             ffmpeg: Path | None = None) -> Path:
-        destination = job.destination.resolve()
+        destination = job.destination.absolute()
+        if destination.resolve() == job.source.path.resolve():
+            raise ConversionError("Нельзя перезаписывать исходный аудиофайл.")
         if not destination.parent.is_dir():
             raise ConversionError("Папка для сохранения не существует.")
-        if destination.exists():
-            raise FileExistsError(f"Файл уже существует: {destination}")
         if self.cancel_event.is_set():
             raise ConversionCancelled("Операция отменена.")
 
@@ -132,9 +132,9 @@ class ConversionRunner:
                 raise ConversionError("FFmpeg: " + ("\n".join(lines[-5:]) or f"код {result}"))
             if not temporary.is_file() or temporary.stat().st_size == 0:
                 raise ConversionError("FFmpeg не создал выходной файл.")
-            # Atomic no-clobber finalization on NTFS: link fails if another process
-            # created the destination during conversion. Never replace originals.
-            os.link(temporary, destination)
+            # Atomic replacement on the same filesystem. Failed/cancelled encoding
+            # keeps an existing output intact; the source file is never replaced.
+            os.replace(temporary, destination)
             if progress:
                 progress(1.0)
             return destination

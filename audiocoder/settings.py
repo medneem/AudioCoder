@@ -12,6 +12,7 @@ DEFAULTS = {
     "output_dir": "",
     "target_format": "FLAC",
     "bitrate": "192k",
+    "appearance": "Light",
 }
 
 
@@ -29,6 +30,8 @@ def validate(config: dict) -> dict:
         raise ValueError("Параметры config.json должны быть строками.")
     if settings["target_format"] not in FORMATS or settings["bitrate"] not in BITRATES:
         raise ValueError("Некорректный формат или битрейт в config.json.")
+    if settings["appearance"] not in ("Light", "Dark", "System"):
+        raise ValueError("Некорректная тема в config.json.")
     return {key: settings[key] for key in DEFAULTS}
 
 

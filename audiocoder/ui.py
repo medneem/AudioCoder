@@ -12,11 +12,13 @@ from version import APP_VERSION
 from .converter import (BITRATES, FORMATS, ConversionCancelled,
                         ConversionJob, ConversionRunner, output_path)
 from .media import probe_audio
+from .waveform import extract_waveform
+from .waveform_view import WaveformView
 from .selection import ClipRange, clock
 from .settings import DEFAULTS, load_settings, save_settings
 
 
-ctk.set_appearance_mode("dark")
+ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 
@@ -24,8 +26,8 @@ class AudioCoderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"AudioCoder {APP_VERSION}")
-        self.geometry("790x520")
-        self.minsize(680, 500)
+        self.geometry("790x640")
+        self.minsize(680, 590)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.events = queue.Queue()
         self.info = None
@@ -33,11 +35,13 @@ class AudioCoderApp(ctk.CTk):
         self.busy = False
         self.probing = False
         self.closing = False
+        self.source_sequence = 0
         try:
             self.settings = load_settings()
         except (ValueError, OSError) as exc:
             self.settings = DEFAULTS.copy()
             self.after(50, lambda error=str(exc): messagebox.showwarning("Настройки", error))
+        ctk.set_appearance_mode(self.settings["appearance"])
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -45,6 +49,13 @@ class AudioCoderApp(ctk.CTk):
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
         ctk.CTkLabel(header, text="AudioCoder", font=ctk.CTkFont(size=26, weight="bold")).pack(side="left")
         ctk.CTkLabel(header, text=f"v{APP_VERSION}", text_color="gray").pack(side="right")
+        self.appearance_menu = ctk.CTkOptionMenu(
+            header, values=["Светлая", "Тёмная", "Системная"], width=125,
+            command=self.on_appearance)
+        self.appearance_menu.set({
+            "Light": "Светлая", "Dark": "Тёмная", "System": "Системная",
+        }[self.settings["appearance"]])
+        self.appearance_menu.pack(side="right", padx=(0, 16))
 
         frame = ctk.CTkFrame(self, corner_radius=14)
         frame.grid(row=1, column=0, sticky="nsew", padx=22, pady=8)
@@ -67,12 +78,14 @@ class AudioCoderApp(ctk.CTk):
         self.length_time.grid(row=0, column=1)
         self.right_time = ctk.CTkLabel(times, text="00:00:00.000")
         self.right_time.grid(row=0, column=2, sticky="e")
+        self.waveform = WaveformView(frame, height=122)
+        self.waveform.grid(row=5, column=0, sticky="ew", padx=24, pady=(5, 4))
         self.slider = CTkRangeSlider(frame, from_=0, to=1, height=20, state="disabled",
                                      command=self.on_range)
-        self.slider.grid(row=5, column=0, sticky="ew", padx=24, pady=(5, 17))
+        self.slider.grid(row=6, column=0, sticky="ew", padx=24, pady=(5, 17))
 
         options = ctk.CTkFrame(frame, fg_color="transparent")
-        options.grid(row=6, column=0, sticky="w", padx=18, pady=6)
+        options.grid(row=7, column=0, sticky="w", padx=18, pady=6)
         ctk.CTkLabel(options, text="Формат").pack(side="left", padx=(0, 8))
         self.format_menu = ctk.CTkOptionMenu(
             options, values=list(FORMATS), width=115, command=self.on_format)
@@ -85,14 +98,14 @@ class AudioCoderApp(ctk.CTk):
         self.bitrate_menu.pack(side="left")
 
         destination = ctk.CTkFrame(frame, fg_color="transparent")
-        destination.grid(row=7, column=0, sticky="ew", padx=18, pady=8)
+        destination.grid(row=8, column=0, sticky="ew", padx=18, pady=8)
         destination.grid_columnconfigure(0, weight=1)
         self.folder_label = ctk.CTkLabel(destination, text="Сохранение: рядом с оригиналом", anchor="w")
         self.folder_label.grid(row=0, column=0, sticky="ew")
         self.folder_button = ctk.CTkButton(destination, text="Изменить", width=100, command=self.choose_folder)
         self.folder_button.grid(row=0, column=1)
         self.target_label = ctk.CTkLabel(frame, text="Результат: —", anchor="w")
-        self.target_label.grid(row=8, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.target_label.grid(row=9, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 20))
@@ -119,6 +132,13 @@ class AudioCoderApp(ctk.CTk):
         except OSError as exc:
             messagebox.showwarning("Настройки", str(exc))
 
+    def on_appearance(self, value):
+        theme = {"Светлая": "Light", "Тёмная": "Dark", "Системная": "System"}[value]
+        self.settings["appearance"] = theme
+        ctk.set_appearance_mode(theme)
+        self.waveform.redraw()
+        self._save()
+
     def choose_file(self):
         folder = self.settings["last_source_dir"]
         if not folder or not Path(folder).is_dir():
@@ -134,6 +154,8 @@ class AudioCoderApp(ctk.CTk):
         if self.busy or self.probing:
             return
         self.info = None
+        self.source_sequence += 1
+        self.waveform.set_peaks(())
         self.probing = True
         self.path_label.configure(text=str(path))
         self.status.configure(text="Анализ аудиофайла…")
@@ -157,8 +179,19 @@ class AudioCoderApp(ctk.CTk):
         self.slider.configure(to=info.duration, state="normal")
         self.slider.set([0.0, info.duration])
         self.on_range((0.0, info.duration))
-        self.status.configure(text="Аудиофайл загружен")
+        self.status.configure(text="Построение звуковой волны…")
         self._preview()
+        self._start_waveform(info)
+
+    def _start_waveform(self, info):
+        sequence = self.source_sequence
+        def worker():
+            try:
+                peaks = extract_waveform(info.path)
+                self.events.put(("waveform", (sequence, peaks)))
+            except (OSError, ValueError) as exc:
+                self.events.put(("waveform_error", (sequence, str(exc))))
+        threading.Thread(target=worker, daemon=True).start()
 
     def on_range(self, values):
         if self.info is None:
@@ -167,6 +200,7 @@ class AudioCoderApp(ctk.CTk):
         self.left_time.configure(text=clock(max(start, 0)))
         self.right_time.configure(text=clock(max(end, 0)))
         self.length_time.configure(text="Выделено: " + (clock(end - start) if end >= start else "—"))
+        self.waveform.set_selection(start, end, self.info.duration)
         self._refresh()
 
     def on_format(self, value):
@@ -200,7 +234,8 @@ class AudioCoderApp(ctk.CTk):
             try:
                 path = self._destination()
                 self.folder_label.configure(text=f"Папка: {path.parent}")
-                self.target_label.configure(text=f"Результат: {path.name}")
+                action = " (будет заменён)" if path.exists() else ""
+                self.target_label.configure(text=f"Результат: {path.name}{action}")
             except ValueError as exc:
                 self.target_label.configure(text=f"Ошибка: {exc}")
         self._refresh()
@@ -229,8 +264,6 @@ class AudioCoderApp(ctk.CTk):
             start, end = self.slider.get()
             clip = ClipRange(float(start), float(end), self.info.duration)
             destination = self._destination()
-            if destination.exists():
-                raise FileExistsError(f"Файл уже существует: {destination}")
             job = ConversionJob(self.info, destination, self.settings["target_format"],
                                 clip, self.settings["bitrate"])
         except (ValueError, OSError) as exc:
@@ -277,6 +310,16 @@ class AudioCoderApp(ctk.CTk):
                     self.status.configure(text="Ошибка открытия файла")
                     self._refresh()
                     messagebox.showerror("Аудиофайл", data)
+                elif kind == "waveform":
+                    sequence, peaks = data
+                    if sequence == self.source_sequence and self.info is not None:
+                        self.waveform.set_peaks(peaks)
+                        if not self.busy:
+                            self.status.configure(text="Аудиофайл загружен")
+                elif kind == "waveform_error":
+                    sequence, error = data
+                    if sequence == self.source_sequence and not self.busy:
+                        self.status.configure(text="Waveform недоступен: " + error[:160])
                 elif kind == "progress":
                     self.progress.set(data)
                     self.status.configure(text=f"Конвертация: {data * 100:.1f}%")

@@ -66,11 +66,21 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(values[-1], 1.0)
         self.assertFalse(list(self.root.glob(".audiocoder-*")))
 
-    def test_existing_result_not_overwritten(self):
-        self.destination.write_bytes(b"preserve")
-        with self.assertRaises(FileExistsError):
+    def test_existing_result_replaced_on_success(self):
+        self.destination.write_bytes(b"previous conversion")
+        with patch("audiocoder.converter.subprocess.Popen", side_effect=lambda cmd, **kw: FakeProcess(cmd)):
             ConversionRunner().run(self.job, ffmpeg=Path("ffmpeg"))
-        self.assertEqual(self.destination.read_bytes(), b"preserve")
+        self.assertEqual(self.destination.read_bytes(), b"encoded")
+        self.assertEqual(self.source.read_bytes(), b"original")
+        self.assertFalse(list(self.root.glob(".audiocoder-*")))
+
+    def test_failed_conversion_preserves_existing_result(self):
+        self.destination.write_bytes(b"previous conversion")
+        with patch("audiocoder.converter.subprocess.Popen", side_effect=lambda cmd, **kw: FakeProcess(cmd, 1)):
+            with self.assertRaises(ConversionError):
+                ConversionRunner().run(self.job, ffmpeg=Path("ffmpeg"))
+        self.assertEqual(self.destination.read_bytes(), b"previous conversion")
+        self.assertFalse(list(self.root.glob(".audiocoder-*")))
 
     def test_failure_cleans_temp(self):
         with patch("audiocoder.converter.subprocess.Popen", side_effect=lambda cmd, **kw: FakeProcess(cmd, 1)):
@@ -79,12 +89,13 @@ class ConverterTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
         self.assertFalse(list(self.root.glob(".audiocoder-*")))
 
-    def test_cancel_before_start(self):
+    def test_cancel_before_start_keeps_existing_result(self):
+        self.destination.write_bytes(b"existing")
         runner = ConversionRunner()
         runner.cancel()
         with self.assertRaises(ConversionCancelled):
             runner.run(self.job, ffmpeg=Path("ffmpeg"))
-        self.assertFalse(self.destination.exists())
+        self.assertEqual(self.destination.read_bytes(), b"existing")
 
     def test_reject_source_overwrite(self):
         with self.assertRaises(ValueError):
