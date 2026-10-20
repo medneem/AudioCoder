@@ -1,0 +1,1 @@
+"""AudioCoder: non-destructive audio conversion and trimming."""
