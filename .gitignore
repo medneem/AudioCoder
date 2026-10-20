@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.idea/
+.vscode/
+build/
+dist/
+release/
+tools/
+assets/app.ico
+assets/app.png
+windows_version_info.txt
+config.json
+config.json.tmp
+*.spec

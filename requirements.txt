@@ -1,0 +1,2 @@
+# CTkRangeSlider 0.3 relies on CustomTkinter 5.2.x internal APIs.
+customtkinter==5.2.2
