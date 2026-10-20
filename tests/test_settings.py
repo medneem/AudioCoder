@@ -31,6 +31,14 @@ class SettingsTests(unittest.TestCase):
             load_settings(self.root)
         self.assertEqual((self.root / "config.json").read_text(encoding="utf-8"), broken)
 
+    def test_theme_setting_is_saved_and_validated(self):
+        config = {**DEFAULTS, "appearance": "System"}
+        save_settings(config, self.root)
+        self.assertEqual(load_settings(self.root)["appearance"], "System")
+        (self.root / "config.json").write_text('{"appearance": "NotATheme"}', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            load_settings(self.root)
+
     def test_default_save(self):
         save_settings(DEFAULTS, self.root)
         self.assertEqual(json.loads((self.root / "config.json").read_text(encoding="utf-8")), DEFAULTS)
