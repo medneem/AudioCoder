@@ -11,11 +11,17 @@ from audiocoder.ui import AudioCoderApp
 
 
 class UITests(unittest.TestCase):
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
+        # CTk schedules delayed DPI/icon callbacks. Recreating/destroying
+        # multiple Tk roots in a single Tcl interpreter emits noisy errors.
         with patch("audiocoder.ui.load_settings", return_value=DEFAULTS.copy()):
-            self.window = AudioCoderApp()
-        self.addCleanup(self.window.destroy)
-        self.window.withdraw()
+            cls.window = AudioCoderApp()
+        cls.window.withdraw()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.window._close()
 
     def test_slider_controls_and_time_labels(self):
         self.assertEqual(self.window.run_button.cget("state"), "disabled")
