@@ -1,0 +1,144 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  BASE_VERSION: "0.1"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-portable:
+    name: Test & build portable Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Stamp build version
+        shell: pwsh
+        run: |
+          python scripts/stamp_version.py "$env:BASE_VERSION" "$env:GITHUB_RUN_NUMBER"
+          python -c "from version import APP_VERSION; print(APP_VERSION)"
+
+      - name: Download FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force tools | Out-Null
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "tools/ffmpeg.zip"
+          Expand-Archive -Path "tools/ffmpeg.zip" -DestinationPath "tools/ffmpeg" -Force
+          foreach ($name in @("ffmpeg", "ffprobe")) {
+            $binary = Get-ChildItem "tools/ffmpeg" -Recurse -Filter "$name.exe" -File | Select-Object -First 1
+            if (-not $binary) { throw "Missing $name.exe" }
+            Copy-Item $binary.FullName "tools/$name.exe"
+          }
+          (Resolve-Path "tools").Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & "tools/ffmpeg.exe" -version | Select-Object -First 1
+          & "tools/ffprobe.exe" -version | Select-Object -First 1
+
+      - name: Unit, GUI and integration tests
+        run: |
+          python -m compileall -q main.py audiocoder vendor scripts tests
+          python -m unittest discover -s tests -v
+
+      - name: Build Windows icon
+        run: python scripts/build_icon.py
+
+      - name: PyInstaller single executable
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name AudioCoder --version-file windows_version_info.txt --icon assets/app.ico --collect-all customtkinter main.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+          if (-not (Test-Path "dist/AudioCoder.exe" -PathType Leaf)) { throw "Missing AudioCoder.exe" }
+
+      - name: Package and verify flat portable ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "$env:BASE_VERSION.$env:GITHUB_RUN_NUMBER"
+          $name = "AudioCoder-v$version-windows-x64.zip"
+          $folder = "release/AudioCoder"
+          New-Item -ItemType Directory -Force $folder | Out-Null
+          Copy-Item "dist/AudioCoder.exe" $folder
+          Copy-Item "tools/ffmpeg.exe" $folder
+          Copy-Item "tools/ffprobe.exe" $folder
+          Copy-Item "assets/app.png" (Join-Path $folder "app-icon.png")
+          Copy-Item "LICENSE" $folder
+          Copy-Item "THIRD_PARTY_NOTICES.md" $folder
+          Copy-Item "vendor/CTkRangeSlider/LICENSE" (Join-Path $folder "CTkRangeSlider-LICENSE.txt")
+          Set-Content -Path (Join-Path $folder "VERSION.txt") -Value $version -Encoding utf8
+          $expected = @("AudioCoder.exe", "ffmpeg.exe", "ffprobe.exe", "app-icon.png", "LICENSE", "THIRD_PARTY_NOTICES.md", "CTkRangeSlider-LICENSE.txt", "VERSION.txt")
+          $files = @(Get-ChildItem -LiteralPath $folder -File)
+          if (@(Get-ChildItem -LiteralPath $folder -Directory).Count -ne 0) { throw "Unexpected subfolders" }
+          if ($files.Count -ne $expected.Count) { throw "Unexpected file count" }
+          foreach ($file in $files) {
+            if ($file.Name -notin $expected -or $file.Length -le 0) { throw "Invalid file $($file.Name)" }
+          }
+          foreach ($item in $expected) {
+            if (-not (Test-Path (Join-Path $folder $item) -PathType Leaf)) { throw "Missing $item" }
+          }
+          Compress-Archive -Path "$folder/*" -DestinationPath $name -CompressionLevel Optimal -Force
+          Add-Type -AssemblyName System.IO.Compression
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $name).Path)
+          try {
+            if ($zip.Entries.Count -ne $expected.Count) { throw "Incorrect ZIP file count" }
+            foreach ($entry in $zip.Entries) {
+              if ($entry.FullName -notin $expected -or $entry.Length -le 0) { throw "Invalid ZIP entry" }
+            }
+          } finally { $zip.Dispose() }
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: AudioCoder-v${{ env.BASE_VERSION }}.${{ github.run_number }}-windows-x64
+          path: AudioCoder-v${{ env.BASE_VERSION }}.${{ github.run_number }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: windows-portable
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: AudioCoder-v${{ env.BASE_VERSION }}.${{ github.run_number }}-windows-x64
+          path: release
+      - name: Publish release ZIP
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="v$BASE_VERSION.$GITHUB_RUN_NUMBER"
+          zip="release/AudioCoder-$tag-windows-x64.zip"
+          test -s "$zip"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$zip" --clobber
+          else
+            gh release create "$tag" "$zip" --target "$GITHUB_SHA" --title "AudioCoder $tag" --notes "Портативный AudioCoder для Windows x64. Распакуйте ZIP и запустите AudioCoder.exe. FFmpeg и FFprobe входят в архив, config.json создаётся при первом запуске." --latest
+          fi
