@@ -28,6 +28,16 @@ ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 
+def short_waveform_time(seconds: float) -> str:
+    """Compact absolute time displayed next to the zoom level."""
+    value = max(0, int(seconds))
+    hours, rest = divmod(value, 3600)
+    minutes, sec = divmod(rest, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{sec:02d}"
+    return f"{minutes:02d}:{sec:02d}"
+
+
 class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def __init__(self):
         super().__init__()
@@ -130,7 +140,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         ctk.CTkLabel(
             zoom_row, text="◈  Колесо — масштаб · Правая кнопка — сдвиг · Левая — границы",
             anchor="w").grid(row=0, column=0, sticky="ew", padx=(12, 5), pady=3)
-        self.zoom_label = ctk.CTkLabel(zoom_row, text="×1.0", width=54)
+        self.zoom_label = ctk.CTkLabel(zoom_row, text="×1.0", width=204, anchor="e")
         self.zoom_label.grid(row=0, column=1, padx=8)
         ctk.CTkButton(
             zoom_row, text="↻ Сброс", width=86, height=28,
@@ -392,6 +402,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 saved_view_start, 1 - self.waveform.viewport.span))
             self.waveform._view_changed()
         self._sync_fade_overlay()
+        self._on_waveform_view(self.waveform.viewport.zoom_level)
         self._loading_source = False
         self._save()
         self.status.configure(text="Построение звуковой волны…")
@@ -464,7 +475,18 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         # previously slowed down every mouse-move during dragging.
 
     def _on_waveform_view(self, zoom):
-        self.zoom_label.configure(text=f"×{zoom:.1f}")
+        if self.info is None:
+            label = f"×{zoom:.1f}"
+        else:
+            # Unlike the handles above the waveform, which show the
+            # selected clip, this zoom label reports the *visible* interval.
+            # It is essential feedback: the slider still spans the full song.
+            duration = self.info.duration
+            viewport = self.waveform.viewport
+            label = (f"×{zoom:.1f} · "
+                     f"{short_waveform_time(viewport.start * duration)}–"
+                     f"{short_waveform_time(viewport.end * duration)}")
+        self.zoom_label.configure(text=label)
         self._record_view()
         self._schedule_detail_waveform()
 
