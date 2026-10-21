@@ -105,7 +105,7 @@ class UITests(unittest.TestCase):
         self.window.deiconify()
         try:
             self.window.update_idletasks()
-            self.assertEqual(self.window.waveform.cget("height"), 120)
+            self.assertEqual(int(self.window.waveform.cget("height")), 120)
             self.assertLessEqual(self.window.winfo_reqheight(),
                                  self.window.winfo_height())
             self.assertEqual(self.window.footer.winfo_manager(), "grid")
