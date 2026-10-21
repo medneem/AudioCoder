@@ -122,9 +122,10 @@ class ConverterTests(unittest.TestCase):
         self.assertIn("st=0.300000:d=0.300000", cmd[cmd.index("-af") + 1])
 
     def test_invalid_fade_settings(self):
-        with self.assertRaises(ValueError):
-            ConversionJob(self.info, self.destination, "MP3", ClipRange(0, 4, 10),
-                          fade_enabled=True, fade_seconds=float("nan"))
+        for duration in (float("nan"), float("inf"), True, 0, -1, 21):
+            with self.subTest(duration=duration), self.assertRaises(ValueError):
+                ConversionJob(self.info, self.destination, "MP3", ClipRange(0, 4, 10),
+                              fade_enabled=True, fade_seconds=duration)
 
     def test_formats(self):
         for fmt, codec in (("FLAC", "flac"), ("WAV", "pcm_s24le"),

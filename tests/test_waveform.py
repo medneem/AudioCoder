@@ -42,6 +42,18 @@ class WaveformTests(unittest.TestCase):
         self.assertAlmostEqual(peaks[0], 0.75)
         self.assertEqual(peaks[1], 0.0)
 
+    def test_peak_columns_matches_reference_for_rectangular_image(self):
+        width, height = 113, 45
+        raw = bytes((x * 37 + y * 19) % 256
+                    for y in range(height) for x in range(width))
+        expected = []
+        for x in range(width):
+            distances = [abs(y + .5 - height / 2) / (height / 2)
+                         for y in range(height)
+                         if raw[y * width + x] > 127]
+            expected.append(max(distances, default=0.0))
+        self.assertEqual(peak_columns(raw, width, height), tuple(expected))
+
     def test_incomplete_frame(self):
         with self.assertRaises(ValueError):
             peak_columns(b"\x00", 960, 120)
@@ -93,20 +105,6 @@ class WaveformTests(unittest.TestCase):
             self.assertEqual(len(detailed), 1600)
             self.assertGreater(max(overview), .05)
             self.assertGreater(max(detailed), .05)
-
-    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
-    def test_real_waveform_for_tone(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "Тон.wav"
-            subprocess.run([
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-                "-c:a", "pcm_s16le", "-n", str(source),
-            ], check=True, capture_output=True)
-            peaks = extract_waveform(source, width=128, height=64)
-            self.assertEqual(len(peaks), 128)
-            self.assertGreater(max(peaks), 0.05)
-            self.assertTrue(all(0 <= peak <= 1 for peak in peaks))
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ class ConversionJob:
             raise ValueError("Неподдерживаемый битрейт.")
         if type(self.fade_enabled) is not bool:
             raise ValueError("Некорректный переключатель затухания.")
-        if not isinstance(self.fade_seconds, (int, float)) or not math.isfinite(self.fade_seconds) or not 0.1 <= self.fade_seconds <= 20:
+        if type(self.fade_seconds) not in (int, float) or not math.isfinite(self.fade_seconds) or not 0.1 <= self.fade_seconds <= 20:
             raise ValueError("Длительность затухания должна быть от 0,1 до 20 секунд.")
         if self.fade_in_curve not in FADE_CURVES or self.fade_out_curve not in FADE_CURVES:
             raise ValueError("Неподдерживаемый алгоритм появления или затухания.")

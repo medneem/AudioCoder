@@ -57,9 +57,18 @@ jobs:
           & "tools/ffplay.exe" -version | Select-Object -First 1
 
       - name: Unit, GUI and integration tests
+        shell: pwsh
         run: |
           python -m compileall -q main.py audiocoder vendor scripts tests
-          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw "Python compileall failed" }
+          # unittest can succeed even after an unhandled Tkinter callback
+          # traceback. Capture stderr too and fail the Windows build.
+          python -m unittest discover -s tests -v 2>&1 | Tee-Object -FilePath "test-output.log"
+          if ($LASTEXITCODE -ne 0) { throw "Python tests failed" }
+          $log = Get-Content "test-output.log" -Raw
+          if ($log -match "Exception in Tkinter callback|invalid command name") {
+            throw "Unhandled Tkinter callback exception found in test output"
+          }
 
       - name: Build Windows icon
         run: python scripts/build_icon.py

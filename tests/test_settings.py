@@ -19,11 +19,6 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(load_settings(self.root), settings)
         self.assertIn("Музыка", (self.root / "config.json").read_text(encoding="utf-8"))
 
-    def test_legacy_config(self):
-        (self.root / "config.json").write_text('{"target_format": "WAV"}', encoding="utf-8")
-        self.assertEqual(load_settings(self.root)["bitrate"], DEFAULTS["bitrate"])
-        self.assertEqual(load_settings(self.root)["target_format"], "WAV")
-
     def test_broken_config_preserved(self):
         broken = '{"target_format":"BAD"}'
         (self.root / "config.json").write_text(broken, encoding="utf-8")
@@ -38,12 +33,6 @@ class SettingsTests(unittest.TestCase):
         (self.root / "config.json").write_text('{"appearance": "NotATheme"}', encoding="utf-8")
         with self.assertRaises(ValueError):
             load_settings(self.root)
-
-    def test_format_bitrate_and_fade_settings_persist(self):
-        values = {**DEFAULTS, "target_format": "MP3", "bitrate": "320k",
-                  "fade_enabled": True, "fade_seconds": 2.0}
-        save_settings(values, self.root)
-        self.assertEqual(load_settings(self.root), values)
 
     def test_invalid_fade_settings_are_rejected(self):
         for invalid in ("yes", None, 0):
@@ -69,9 +58,12 @@ class SettingsTests(unittest.TestCase):
 
     def test_legacy_settings_get_new_defaults(self):
         (self.root / "config.json").write_text(
-            '{"target_format":"FLAC","fade_enabled":true}',
+            '{"target_format":"WAV","fade_enabled":true}',
             encoding="utf-8")
         values = load_settings(self.root)
+        self.assertEqual(values["target_format"], "WAV")
+        self.assertTrue(values["fade_enabled"])
+        self.assertEqual(values["bitrate"], DEFAULTS["bitrate"])
         self.assertEqual(values["fade_in_curve"], "log")
         self.assertEqual(values["vbr_enabled"], False)
         self.assertEqual(values["waveform_zoom"], 1)

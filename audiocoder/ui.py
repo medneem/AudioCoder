@@ -15,6 +15,7 @@ from .converter import (BITRATES, FORMATS, ConversionCancelled,
 from .media import probe_audio
 from .player import AudioPlayer, listening_window
 from .waveform import extract_waveform
+from .waveform_jobs import LatestOnlyWorker, WaveformDetailRequest
 from .waveform_view import WaveformView
 from .fade import FADE_CURVES
 from .fade_help import FadeHelpWindow
@@ -39,6 +40,7 @@ def short_waveform_time(seconds: float) -> str:
 
 
 class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
+    """Tk widgets and user actions; expensive decoding runs in workers."""
     def __init__(self):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
@@ -57,6 +59,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._preview_timer = None
         self._detail_timer = None
         self._detail_generation = 0
+        self._detail_worker = LatestOnlyWorker(
+            self._decode_detail_waveform, self._detail_completed,
+            self._detail_failed)
         self._last_drag_side = None
         self._playing = False
         self._save_timer = None
@@ -147,6 +152,37 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             command=self.waveform.reset_view
         ).grid(row=0, column=2, padx=(2, 10), pady=3)
 
+        self._build_codec_card(frame)
+        self._build_fade_card(frame)
+        self._build_folder_card(frame)
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        self.footer = footer
+        footer.grid(row=2, column=0, sticky="ew", padx=17, pady=(2, 8))
+        footer.grid_columnconfigure(0, weight=1)
+        self.status = ctk.CTkLabel(footer, text="Готов к работе", anchor="w")
+        self.status.grid(row=0, column=0, sticky="ew")
+        self.progress = ctk.CTkProgressBar(footer)
+        self.progress.grid(row=1, column=0, sticky="ew", pady=3)
+        self.progress.set(0)
+        buttons = ctk.CTkFrame(footer, fg_color="transparent")
+        buttons.grid(row=2, column=0, sticky="e")
+        self.play_button = ctk.CTkButton(
+            buttons, text="▶ Воспроизвести", width=155,
+            state="disabled", command=self.toggle_play)
+        self.play_button.pack(side="left", padx=(0, 10))
+        self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
+                                            fg_color="gray40", command=self.cancel)
+        self.cancel_button.pack(side="left", padx=(0, 10))
+        self.run_button = ctk.CTkButton(buttons, text="Конвертировать", width=170,
+                                         state="disabled", command=self.convert)
+        self.run_button.pack(side="left")
+        self._refresh()
+        self.body_font = apply_body_font(self, excluded=(self.main_heading,))
+        self._fit_editor_to_window()
+        self.after(100, self._poll)
+
+    def _build_codec_card(self, frame):
+        """Source encoding, bitrate, and optional variable-bitrate controls."""
         self.codec_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
@@ -183,6 +219,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.vbr_quality_menu.pack(side="left")
         self._update_audio_options()
 
+
+    def _build_fade_card(self, frame):
+        """Independent fade-in/out curves without inline help diagrams."""
         self.fade_card = ctk.CTkFrame(
             frame, fg_color=("#EEF4FF", "#26364F"), corner_radius=14,
             border_width=1, border_color=("#DAE7FA", "#455D7D"))
@@ -224,6 +263,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._update_fade_state()
         self._sync_fade_overlay()
 
+
+    def _build_folder_card(self, frame):
+        """Output directory picker; destination label lives in status only."""
         self.folder_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
@@ -238,31 +280,6 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.folder_card, text="📁 Изменить", width=136, height=30,
             command=self.choose_folder)
         self.folder_button.grid(row=0, column=2, padx=(0, 12), pady=6)
-        footer = ctk.CTkFrame(self, fg_color="transparent")
-        self.footer = footer
-        footer.grid(row=2, column=0, sticky="ew", padx=17, pady=(2, 8))
-        footer.grid_columnconfigure(0, weight=1)
-        self.status = ctk.CTkLabel(footer, text="Готов к работе", anchor="w")
-        self.status.grid(row=0, column=0, sticky="ew")
-        self.progress = ctk.CTkProgressBar(footer)
-        self.progress.grid(row=1, column=0, sticky="ew", pady=3)
-        self.progress.set(0)
-        buttons = ctk.CTkFrame(footer, fg_color="transparent")
-        buttons.grid(row=2, column=0, sticky="e")
-        self.play_button = ctk.CTkButton(
-            buttons, text="▶ Воспроизвести", width=155,
-            state="disabled", command=self.toggle_play)
-        self.play_button.pack(side="left", padx=(0, 10))
-        self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
-                                            fg_color="gray40", command=self.cancel)
-        self.cancel_button.pack(side="left", padx=(0, 10))
-        self.run_button = ctk.CTkButton(buttons, text="Конвертировать", width=170,
-                                         state="disabled", command=self.convert)
-        self.run_button.pack(side="left")
-        self._refresh()
-        self.body_font = apply_body_font(self, excluded=(self.main_heading,))
-        self._fit_editor_to_window()
-        self.after(100, self._poll)
 
     def _fit_editor_to_window(self):
         """Make the entire fixed editor visible rather than hiding its bottom.
@@ -400,7 +417,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.waveform.viewport.span = 1 / saved_zoom
             self.waveform.viewport.start = max(0.0, min(
                 saved_view_start, 1 - self.waveform.viewport.span))
-            self.waveform._view_changed()
+            self.waveform.redraw()
         self._sync_fade_overlay()
         self._on_waveform_view(self.waveform.viewport.zoom_level)
         self._loading_source = False
@@ -421,6 +438,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
     def _cancel_detail_waveform(self):
         self._detail_generation += 1
+        self._detail_worker.clear()
         if self._detail_timer is not None:
             self.after_cancel(self._detail_timer)
             self._detail_timer = None
@@ -443,22 +461,28 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         duration = (end - start) * info.duration
         if duration <= 0.05:
             return
-        sequence = self.source_sequence
-        generation = self._detail_generation
-        width = max(1024, min(4096, self.waveform.winfo_width() * 2))
+        request = WaveformDetailRequest(
+            path=info.path, audio_duration=info.duration, start=start, end=end,
+            width=max(1024, min(4096, self.waveform.winfo_width() * 2)),
+            sequence=self.source_sequence, generation=self._detail_generation)
+        self._detail_worker.submit(request)
 
-        def worker():
-            try:
-                peaks = extract_waveform(
-                    info.path, width=width, height=120, timeout=90,
-                    start=start * info.duration, duration=duration)
-                self.events.put((
-                    "waveform_detail", (sequence, generation, start, end, peaks)))
-            except (OSError, ValueError):
-                # Keep rendering the full-track overview when detail decoding
-                # cannot be performed; do not interrupt editing or playback.
-                pass
-        threading.Thread(target=worker, daemon=True).start()
+    @staticmethod
+    def _decode_detail_waveform(request: WaveformDetailRequest):
+        return extract_waveform(
+            request.path, width=request.width, height=120, timeout=90,
+            start=request.start * request.audio_duration,
+            duration=(request.end - request.start) * request.audio_duration)
+
+    def _detail_completed(self, request: WaveformDetailRequest, peaks):
+        # Background thread: communicate only via the Tk event queue.
+        self.events.put(("waveform_detail", (
+            request.sequence, request.generation,
+            request.start, request.end, peaks)))
+
+    def _detail_failed(self, request: WaveformDetailRequest, error: Exception):
+        self.events.put(("waveform_detail_error", (
+            request.sequence, request.generation, str(error))))
 
     def on_range(self, values):
         if self.info is None:
@@ -738,7 +762,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if self.closing:
             return
         try:
-            while True:
+            # Never let a burst of FFmpeg progress messages block redraw,
+            # input handling or cancellation for an entire Tk event-loop turn.
+            for _ in range(120):
                 kind, data = self.events.get_nowait()
                 if kind == "loaded":
                     self._loaded(data)
@@ -760,6 +786,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                             and generation == self._detail_generation
                             and self.info is not None):
                         self.waveform.set_detail_peaks(start, end, peaks)
+                elif kind == "waveform_detail_error":
+                    sequence, generation, error = data
+                    if (sequence == self.source_sequence
+                            and generation == self._detail_generation
+                            and not self.busy):
+                        self.status.configure(text="Детализация waveform: " + error[:140])
                 elif kind == "waveform_error":
                     sequence, error = data
                     if sequence == self.source_sequence and not self.busy:
@@ -795,11 +827,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 self.play_button.configure(text="▶ Воспроизвести")
             elif self.info is not None:
                 self.waveform.set_playhead(position, self.info.duration)
-        self.after(100, self._poll)
+        self.after(25 if not self.events.empty() else 100, self._poll)
 
     def _close(self):
         self.closing = True
         self._cancel_detail_waveform()
+        self._detail_worker.close()
         self._stop_playback()
         if self.runner:
             self.runner.cancel()
