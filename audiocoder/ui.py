@@ -762,7 +762,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if self.closing:
             return
         try:
-            while True:
+            # Never let a burst of FFmpeg progress messages block redraw,
+            # input handling or cancellation for an entire Tk event-loop turn.
+            for _ in range(120):
                 kind, data = self.events.get_nowait()
                 if kind == "loaded":
                     self._loaded(data)
@@ -825,7 +827,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 self.play_button.configure(text="▶ Воспроизвести")
             elif self.info is not None:
                 self.waveform.set_playhead(position, self.info.duration)
-        self.after(100, self._poll)
+        self.after(25 if not self.events.empty() else 100, self._poll)
 
     def _close(self):
         self.closing = True
