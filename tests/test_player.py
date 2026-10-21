@@ -18,7 +18,7 @@ class PlaybackTests(unittest.TestCase):
 
     def test_short_right_preview_clamped_to_left(self):
         self.assertEqual(listening_window("right", 85.7, 86), PlaybackWindow(85.7, 86))
-        self.assertEqual(listening_window("right", 0, 2), PlaybackWindow(0, 2))
+        self.assertEqual(listening_window("right", 0, 2), PlaybackWindow(1, 2))
 
     def test_invalid(self):
         for args in (("right", 4, 4), ("left", 3, 2), ("selection", -1, 4),
@@ -27,7 +27,7 @@ class PlaybackTests(unittest.TestCase):
                 listening_window(*args)
 
     def test_ffplay_command(self):
-        cmd = ffplay_command(Path("Музыка.flac"), PlaybackWindow(185, 190), Path("ffplay"))
+        cmd = ffplay_command(Path("Музыка.flac"), PlaybackWindow(189, 190), Path("ffplay"))
         self.assertEqual(cmd[cmd.index("-ss") + 1], "189.000000")
         self.assertEqual(cmd[cmd.index("-t") + 1], "1.000000")
         self.assertIn("-nodisp", cmd)
