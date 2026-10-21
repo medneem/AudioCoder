@@ -39,6 +39,22 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_settings(self.root)
 
+    def test_format_bitrate_and_fade_settings_persist(self):
+        values = {**DEFAULTS, "target_format": "MP3", "bitrate": "320k",
+                  "fade_enabled": True, "fade_seconds": 2.0}
+        save_settings(values, self.root)
+        self.assertEqual(load_settings(self.root), values)
+
+    def test_invalid_fade_settings_are_rejected(self):
+        for invalid in ("yes", None, 0):
+            values = {**DEFAULTS, "fade_enabled": invalid}
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                save_settings(values, self.root)
+        for invalid in (-1, 0, "one", 200, True):
+            values = {**DEFAULTS, "fade_seconds": invalid}
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                save_settings(values, self.root)
+
     def test_default_save(self):
         save_settings(DEFAULTS, self.root)
         self.assertEqual(json.loads((self.root / "config.json").read_text(encoding="utf-8")), DEFAULTS)

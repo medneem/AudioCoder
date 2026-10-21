@@ -85,8 +85,47 @@ class UITests(unittest.TestCase):
                 self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
                 self.window._right_moved(80)
                 self.window._slider_released()
-                self.assertEqual(play.call_args.args[1], PlaybackWindow(75, 80))
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(79, 80))
             self.window._stop_playback()
+
+    def test_format_and_bitrate_persist_to_config(self):
+        from audiocoder.settings import load_settings, save_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            with patch("audiocoder.ui.save_settings", side_effect=lambda settings: save_settings(settings, folder)):
+                self.window.on_format("MP3")
+                self.window.on_bitrate("320k")
+            loaded = load_settings(folder)
+            self.assertEqual(loaded["target_format"], "MP3")
+            self.assertEqual(loaded["bitrate"], "320k")
+
+    def test_fade_option_and_output_configuration(self):
+        self.window.fade_var.set(True)
+        with patch("audiocoder.ui.save_settings"):
+            self.window.on_fade_changed()
+            self.window.on_fade_seconds("2.0")
+        self.assertTrue(self.window.settings["fade_enabled"])
+        self.assertEqual(self.window.settings["fade_seconds"], 2.0)
+        self.assertEqual(self.window.fade_menu.cget("state"), "normal")
+        self.assertTrue(self.window.waveform.fade_enabled)
+
+    def test_zoomed_waveform_edit_moves_slider_boundary(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Песня.flac"
+            path.touch()
+            with patch("audiocoder.ui.save_settings"), patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(path, 120.0, "flac", 44100, 2))
+            self.window.slider.set([10, 80])
+            self.window.on_range(self.window.slider.get())
+            self.window.waveform.viewport.zoom(4, .5)
+            with patch.object(self.window, "_slider_moved") as moved:
+                self.window._waveform_edit("left", .25, False)
+            self.assertAlmostEqual(self.window.slider.get()[0], 30)
+            moved.assert_called_once_with("left")
+            self.assertEqual(self.window.waveform.selection, (10 / 120, 80 / 120))
+            self.window.on_range(self.window.slider.get())
+            self.assertAlmostEqual(self.window.waveform.selection[0], .25)
 
     def test_mp3_bitrate_selector(self):
         self.window.settings["target_format"] = "FLAC"

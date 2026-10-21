@@ -48,6 +48,40 @@ class ConverterTests(unittest.TestCase):
         self.assertIn("-n", cmd)
         self.assertNotIn("-y", cmd)
 
+    def test_maximum_quality_parameters(self):
+        for format_name, codec, quality in (
+            ("FLAC", "flac", "12"),
+            ("MP3", "libmp3lame", "0"),
+            ("Opus", "libopus", "10"),
+        ):
+            with self.subTest(format=format_name):
+                path = output_path(self.source, self.root, format_name)
+                job = ConversionJob(self.info, path, format_name, ClipRange(0, 10, 10))
+                cmd = ffmpeg_command(job, path, Path("ffmpeg"))
+                self.assertIn(codec, cmd)
+                self.assertEqual(cmd[cmd.index("-compression_level") + 1], quality)
+
+    def test_logarithmic_fades_follow_trimmed_timeline(self):
+        job = ConversionJob(self.info, self.destination, "MP3", ClipRange(2, 6, 10),
+                            fade_enabled=True, fade_seconds=1)
+        cmd = ffmpeg_command(job, self.destination, Path("ffmpeg"))
+        self.assertIn("-af", cmd)
+        self.assertEqual(cmd[cmd.index("-af") + 1],
+                         "afade=t=in:st=0:d=1.000000:curve=log,"
+                         "afade=t=out:st=3.000000:d=1.000000:curve=log")
+        self.assertLess(cmd.index("-ss"), cmd.index("-i"))
+
+    def test_fades_are_clamped_for_short_clips(self):
+        job = ConversionJob(self.info, self.destination, "MP3", ClipRange(0, .6, 10),
+                            fade_enabled=True, fade_seconds=3)
+        cmd = ffmpeg_command(job, self.destination, Path("ffmpeg"))
+        self.assertIn("st=0.300000:d=0.300000", cmd[cmd.index("-af") + 1])
+
+    def test_invalid_fade_settings(self):
+        with self.assertRaises(ValueError):
+            ConversionJob(self.info, self.destination, "MP3", ClipRange(0, 4, 10),
+                          fade_enabled=True, fade_seconds=float("nan"))
+
     def test_formats(self):
         for fmt, codec in (("FLAC", "flac"), ("WAV", "pcm_s24le"),
                            ("Opus", "libopus"), ("MP3", "libmp3lame")):

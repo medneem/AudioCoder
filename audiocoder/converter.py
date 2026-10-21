@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 import os
+import math
 from pathlib import Path
 import subprocess
 import tempfile
@@ -41,12 +42,18 @@ class ConversionJob:
     target_format: str
     clip: ClipRange
     bitrate: str = "192k"
+    fade_enabled: bool = False
+    fade_seconds: float = 1.0
 
     def __post_init__(self):
         if self.target_format not in FORMATS:
             raise ValueError("Неподдерживаемый формат.")
         if self.bitrate not in BITRATES:
             raise ValueError("Неподдерживаемый битрейт.")
+        if type(self.fade_enabled) is not bool:
+            raise ValueError("Некорректный переключатель затухания.")
+        if not isinstance(self.fade_seconds, (int, float)) or not math.isfinite(self.fade_seconds) or not 0.1 <= self.fade_seconds <= 20:
+            raise ValueError("Длительность затухания должна быть от 0,1 до 20 секунд.")
         if self.clip.duration != self.source.duration:
             raise ValueError("Диапазон не соответствует длительности файла.")
         if self.destination.suffix.lower() != "." + self.target_format.lower():
@@ -58,16 +65,28 @@ class ConversionJob:
 def ffmpeg_command(job: ConversionJob, destination: Path, ffmpeg: Path) -> list[str]:
     cmd = [
         str(ffmpeg), "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error",
-        "-progress", "pipe:1", "-i", str(job.source.path),
-        "-ss", f"{job.clip.start:.6f}", "-t", f"{job.clip.length:.6f}",
+        "-progress", "pipe:1",
+        "-ss", f"{job.clip.start:.6f}", "-i", str(job.source.path),
+        "-t", f"{job.clip.length:.6f}",
         "-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "0",
     ]
     codecs = {
-        "FLAC": ["-c:a", "flac", "-compression_level", "5"],
-        "MP3": ["-c:a", "libmp3lame", "-b:a", job.bitrate, "-id3v2_version", "3"],
+        "FLAC": ["-c:a", "flac", "-compression_level", "12"],
+        "MP3": ["-c:a", "libmp3lame", "-b:a", job.bitrate, "-compression_level", "0", "-id3v2_version", "3"],
         "WAV": ["-c:a", "pcm_s24le"],
-        "Opus": ["-c:a", "libopus", "-b:a", "160k", "-vbr", "on"],
+        "Opus": ["-c:a", "libopus", "-b:a", "160k", "-vbr", "on", "-compression_level", "10"],
     }
+    if job.fade_enabled:
+        # Use logarithmic fades on the trimmed output timeline.
+        # Short excerpts use symmetrical, non-overlapping fades.
+        length = job.clip.length
+        fade = min(job.fade_seconds, length / 2)
+        start_out = max(0.0, length - fade)
+        filters = (
+            f"afade=t=in:st=0:d={fade:.6f}:curve=log,"
+            f"afade=t=out:st={start_out:.6f}:d={fade:.6f}:curve=log"
+        )
+        cmd.extend(["-af", filters])
     return cmd + codecs[job.target_format] + ["-n", str(destination)]
 
 
