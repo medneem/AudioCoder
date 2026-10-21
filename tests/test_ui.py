@@ -104,7 +104,7 @@ class UITests(unittest.TestCase):
         self.assertFalse(hasattr(self.window.editor_panel, "_parent_canvas"))
         self.window.deiconify()
         try:
-            self.window.update_idletasks()
+            self.window.update()
             self.assertEqual(int(self.window.waveform.cget("height")), 120)
             self.assertLessEqual(self.window.winfo_reqheight(),
                                  self.window.winfo_height())
@@ -125,8 +125,10 @@ class UITests(unittest.TestCase):
     def test_window_rejects_height_too_small_to_show_all_controls(self):
         self.window.deiconify()
         try:
-            self.window.update_idletasks()
-            minimum = self.window.minsize()[1]
+            self.window.update()
+            # CustomTkinter 5.2.x does not implement a getter for minsize();
+            # use the native window-manager query instead.
+            minimum = int(self.window.tk.call("wm", "minsize", self.window._w)[1])
             self.assertGreaterEqual(minimum, self.window.winfo_reqheight())
             self.window.geometry("920x500")
             self.window.update()
