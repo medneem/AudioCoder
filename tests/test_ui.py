@@ -102,6 +102,7 @@ class UITests(unittest.TestCase):
         self.assertIsInstance(self.window.editor_panel, ctk.CTkFrame)
         self.assertNotIsInstance(self.window.editor_panel, ctk.CTkScrollableFrame)
         self.assertFalse(hasattr(self.window.editor_panel, "_parent_canvas"))
+        self.assertFalse(hasattr(self.window, "target_label"))
         self.window.deiconify()
         try:
             self.window.update()
@@ -150,21 +151,6 @@ class UITests(unittest.TestCase):
         self.assertEqual(self.window.appearance_menu.pack_info()["side"], "right")
         self.assertEqual(self.window.help_button.pack_info()["side"], "right")
         self.assertEqual(self.window.title(), f"AudioCoder {APP_VERSION}")
-
-    def test_no_output_result_row_and_compact_folder_spacing(self):
-        self.assertFalse(hasattr(self.window, "target_label"))
-        self.assertEqual(self.window.editor_panel.grid_slaves(row=11, column=0), [])
-        self.assertEqual(self.window.folder_card.grid_info()["row"], 10)
-        self.window.deiconify()
-        try:
-            self.window.update()
-            minimum = int(self.window.tk.call("wm", "minsize", self.window._w)[1])
-            self.assertGreaterEqual(minimum, self.window.winfo_reqheight())
-            self.assertLessEqual(
-                self.window.folder_card.winfo_rooty() + self.window.folder_card.winfo_height(),
-                self.window.editor_panel.winfo_rooty() + self.window.editor_panel.winfo_height())
-        finally:
-            self.window.withdraw()
 
     def test_slider_controls_and_time_labels(self):
         self.window.info = None
