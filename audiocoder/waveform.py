@@ -18,14 +18,17 @@ def waveform_command(path: Path, ffmpeg: Path, width: int, height: int,
         raise ValueError("Некорректная начальная позиция waveform.")
     if duration is not None and (not math.isfinite(duration) or duration <= 0):
         raise ValueError("Некорректная длительность waveform.")
-    filtergraph = (f"[0:a:0]aformat=channel_layouts=mono,"
+    # showwavespic buffers the entire input before emitting a single frame.
+    # Output -t does NOT bound audio entering the filter; atrim does.
+    source = "[0:a:0]"
+    if duration is not None:
+        source += f"atrim=duration={duration:.6f},asetpts=PTS-STARTPTS,"
+    filtergraph = (f"{source}aformat=channel_layouts=mono,"
                    f"showwavespic=s={width}x{height}:colors=white:scale=lin:draw=full[v]")
     command = [str(ffmpeg), "-hide_banner", "-nostdin", "-v", "error"]
     if start:
         command += ["-ss", f"{start:.6f}"]
     command += ["-i", str(path)]
-    if duration is not None:
-        command += ["-t", f"{duration:.6f}"]
     return command + [
         "-filter_complex", filtergraph,
         "-map", "[v]", "-frames:v", "1", "-f", "rawvideo",
