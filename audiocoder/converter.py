@@ -11,6 +11,7 @@ from typing import Callable
 
 from .media import AudioInfo, find_binary
 from .selection import ClipRange
+from .fade import FADE_CURVES
 
 
 FORMATS = ("FLAC", "MP3", "WAV", "Opus")
@@ -44,6 +45,10 @@ class ConversionJob:
     bitrate: str = "192k"
     fade_enabled: bool = False
     fade_seconds: float = 1.0
+    fade_in_curve: str = "log"
+    fade_out_curve: str = "log"
+    vbr_enabled: bool = False
+    vbr_quality: int = 2
 
     def __post_init__(self):
         if self.target_format not in FORMATS:
@@ -54,6 +59,12 @@ class ConversionJob:
             raise ValueError("Некорректный переключатель затухания.")
         if not isinstance(self.fade_seconds, (int, float)) or not math.isfinite(self.fade_seconds) or not 0.1 <= self.fade_seconds <= 20:
             raise ValueError("Длительность затухания должна быть от 0,1 до 20 секунд.")
+        if self.fade_in_curve not in FADE_CURVES or self.fade_out_curve not in FADE_CURVES:
+            raise ValueError("Неподдерживаемый алгоритм появления или затухания.")
+        if type(self.vbr_enabled) is not bool:
+            raise ValueError("VBR должен быть логическим значением.")
+        if type(self.vbr_quality) is not int or not (0 <= self.vbr_quality <= 9):
+            raise ValueError("Качество MP3 VBR должно быть в диапазоне 0–9.")
         if self.clip.duration != self.source.duration:
             raise ValueError("Диапазон не соответствует длительности файла.")
         if self.destination.suffix.lower() != "." + self.target_format.lower():
@@ -72,9 +83,13 @@ def ffmpeg_command(job: ConversionJob, destination: Path, ffmpeg: Path) -> list[
     ]
     codecs = {
         "FLAC": ["-c:a", "flac", "-compression_level", "12"],
-        "MP3": ["-c:a", "libmp3lame", "-b:a", job.bitrate, "-compression_level", "0", "-id3v2_version", "3"],
+        "MP3": (["-c:a", "libmp3lame", "-q:a", str(job.vbr_quality),
+                 "-compression_level", "0", "-id3v2_version", "3"]
+                if job.vbr_enabled else
+                ["-c:a", "libmp3lame", "-b:a", job.bitrate,
+                 "-compression_level", "0", "-id3v2_version", "3"]),
         "WAV": ["-c:a", "pcm_s24le"],
-        "Opus": ["-c:a", "libopus", "-b:a", "160k", "-vbr", "on", "-compression_level", "10"],
+        "Opus": ["-c:a", "libopus", "-b:a", job.bitrate, "-vbr", "on" if job.vbr_enabled else "off", "-compression_level", "10"],
     }
     if job.fade_enabled:
         # Use logarithmic fades on the trimmed output timeline.
@@ -83,8 +98,8 @@ def ffmpeg_command(job: ConversionJob, destination: Path, ffmpeg: Path) -> list[
         fade = min(job.fade_seconds, length / 2)
         start_out = max(0.0, length - fade)
         filters = (
-            f"afade=t=in:st=0:d={fade:.6f}:curve=log,"
-            f"afade=t=out:st={start_out:.6f}:d={fade:.6f}:curve=log"
+            f"afade=t=in:st=0:d={fade:.6f}:curve={job.fade_in_curve},"
+            f"afade=t=out:st={start_out:.6f}:d={fade:.6f}:curve={job.fade_out_curve}"
         )
         cmd.extend(["-af", filters])
     return cmd + codecs[job.target_format] + ["-n", str(destination)]

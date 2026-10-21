@@ -15,6 +15,8 @@ from .media import probe_audio
 from .player import AudioPlayer, listening_window
 from .waveform import extract_waveform
 from .waveform_view import WaveformView
+from .fade import FADE_CURVES
+from .fade_preview import FadePreview
 from .selection import ClipRange, clock
 from .settings import DEFAULTS, load_settings, save_settings
 
@@ -27,8 +29,8 @@ class AudioCoderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"AudioCoder {APP_VERSION}")
-        self.geometry("800x730")
-        self.minsize(700, 680)
+        self.geometry("920x930")
+        self.minsize(810, 810)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.events = queue.Queue()
         self.info = None
@@ -41,6 +43,8 @@ class AudioCoderApp(ctk.CTk):
         self._preview_timer = None
         self._last_drag_side = None
         self._playing = False
+        self._save_timer = None
+        self._loading_source = False
         try:
             self.settings = load_settings()
         except (ValueError, OSError) as exc:
@@ -117,13 +121,29 @@ class AudioCoderApp(ctk.CTk):
         self.bitrate_menu = ctk.CTkOptionMenu(
             options, values=list(BITRATES), width=110, command=self.on_bitrate)
         self.bitrate_menu.set(self.settings["bitrate"])
-        self.bitrate_menu.pack(side="left")
+        self.bitrate_menu.pack(side="left", padx=(0, 18))
+        self.vbr_var = ctk.BooleanVar(value=self.settings["vbr_enabled"])
+        self.vbr_checkbox = ctk.CTkCheckBox(
+            options, text="VBR", variable=self.vbr_var, width=75,
+            command=self.on_vbr_changed)
+        self.vbr_checkbox.pack(side="left")
+
+        quality_row = ctk.CTkFrame(frame, fg_color="transparent")
+        quality_row.grid(row=9, column=0, sticky="w", padx=18, pady=(2, 6))
+        ctk.CTkLabel(quality_row, text="Качество MP3 VBR (0 — лучшее):").pack(
+            side="left", padx=(0, 9))
+        self.vbr_quality_menu = ctk.CTkOptionMenu(
+            quality_row, values=[str(n) for n in range(10)], width=75,
+            command=self.on_vbr_quality)
+        self.vbr_quality_menu.set(str(self.settings["vbr_quality"]))
+        self.vbr_quality_menu.pack(side="left")
+        self._update_audio_options()
 
         fades = ctk.CTkFrame(frame, fg_color="transparent")
-        fades.grid(row=9, column=0, sticky="w", padx=18, pady=(5, 7))
+        fades.grid(row=10, column=0, sticky="w", padx=18, pady=(5, 7))
         self.fade_var = ctk.BooleanVar(value=self.settings["fade_enabled"])
         self.fade_checkbox = ctk.CTkCheckBox(
-            fades, text="Плавное логарифмическое появление и затухание",
+            fades, text="Плавное появление и затухание",
             variable=self.fade_var, command=self.on_fade_changed)
         self.fade_checkbox.pack(side="left", padx=(0, 15))
         ctk.CTkLabel(fades, text="Длительность, с").pack(side="left", padx=(0, 6))
@@ -132,18 +152,42 @@ class AudioCoderApp(ctk.CTk):
             command=self.on_fade_seconds)
         self.fade_menu.set(str(self.settings["fade_seconds"]))
         self.fade_menu.pack(side="left")
+        curves = ctk.CTkFrame(frame, fg_color="transparent")
+        curves.grid(row=11, column=0, sticky="ew", padx=18, pady=(3, 4))
+        ctk.CTkLabel(curves, text="Появление").pack(side="left", padx=(0, 8))
+        curve_names = list(FADE_CURVES.values())
+        self.fade_in_menu = ctk.CTkOptionMenu(
+            curves, values=curve_names, width=185,
+            command=lambda label: self.on_fade_curve("fade_in_curve", label))
+        self.fade_in_menu.set(FADE_CURVES[self.settings["fade_in_curve"]])
+        self.fade_in_menu.pack(side="left", padx=(0, 16))
+        ctk.CTkLabel(curves, text="Затухание").pack(side="left", padx=(0, 8))
+        self.fade_out_menu = ctk.CTkOptionMenu(
+            curves, values=curve_names, width=185,
+            command=lambda label: self.on_fade_curve("fade_out_curve", label))
+        self.fade_out_menu.set(FADE_CURVES[self.settings["fade_out_curve"]])
+        self.fade_out_menu.pack(side="left")
+        self.fade_preview = FadePreview(frame, height=165)
+        self.fade_preview.grid(row=12, column=0, sticky="ew", padx=24, pady=(0, 3))
+        self.fade_preview.set_curves(
+            self.settings["fade_in_curve"], self.settings["fade_out_curve"])
+        ctk.CTkLabel(
+            frame, text="Графики формы: схема 1 секунды (0–0,2 / 0,8–1,0 c). "
+                        "Длительность эффекта задаётся выше.",
+            font=ctk.CTkFont(size=11)
+        ).grid(row=13, column=0, sticky="w", padx=24, pady=(0, 6))
         self._update_fade_state()
         self._sync_fade_overlay()
 
         destination = ctk.CTkFrame(frame, fg_color="transparent")
-        destination.grid(row=10, column=0, sticky="ew", padx=18, pady=8)
+        destination.grid(row=14, column=0, sticky="ew", padx=18, pady=8)
         destination.grid_columnconfigure(0, weight=1)
         self.folder_label = ctk.CTkLabel(destination, text="Сохранение: рядом с оригиналом", anchor="w")
         self.folder_label.grid(row=0, column=0, sticky="ew")
         self.folder_button = ctk.CTkButton(destination, text="Изменить", width=100, command=self.choose_folder)
         self.folder_button.grid(row=0, column=1)
         self.target_label = ctk.CTkLabel(frame, text="Результат: —", anchor="w")
-        self.target_label.grid(row=11, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.target_label.grid(row=15, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 20))
@@ -169,16 +213,35 @@ class AudioCoderApp(ctk.CTk):
         self.after(100, self._poll)
 
     def _save(self):
+        if self._save_timer is not None:
+            self.after_cancel(self._save_timer)
+            self._save_timer = None
         try:
             save_settings(self.settings)
         except OSError as exc:
             messagebox.showwarning("Настройки", str(exc))
+
+    def _schedule_save(self):
+        # Never rewrite config.json on every mouse move / scroll event.
+        if self._loading_source or self.closing:
+            return
+        if self._save_timer is not None:
+            self.after_cancel(self._save_timer)
+        self._save_timer = self.after(600, self._save)
+
+    def _record_view(self):
+        if self.info is None:
+            return
+        self.settings["waveform_zoom"] = self.waveform.viewport.zoom_level
+        self.settings["waveform_start"] = self.waveform.viewport.start
+        self._schedule_save()
 
     def on_appearance(self, value):
         theme = {"Светлая": "Light", "Тёмная": "Dark", "Системная": "System"}[value]
         self.settings["appearance"] = theme
         ctk.set_appearance_mode(theme)
         self.waveform.redraw()
+        self.fade_preview.redraw()
         self._save()
 
     def choose_file(self):
@@ -196,6 +259,7 @@ class AudioCoderApp(ctk.CTk):
         if self.busy or self.probing:
             return
         self._stop_playback()
+        self._save()
         self.info = None
         self.source_sequence += 1
         self.waveform.set_peaks(())
@@ -215,15 +279,32 @@ class AudioCoderApp(ctk.CTk):
     def _loaded(self, info):
         self.probing = False
         self.info = info
+        self._loading_source = True
+        same_source = self.settings["last_source_path"] == str(info.path)
+        saved_start = self.settings["clip_start"]
+        saved_end = self.settings["clip_end"]
+        saved_zoom = self.settings["waveform_zoom"]
+        saved_view_start = self.settings["waveform_start"]
         self.settings["last_source_dir"] = str(info.path.parent)
-        self._save()
+        self.settings["last_source_path"] = str(info.path)
         self.metadata.configure(text=f"Длительность: {clock(info.duration)}    "
                                      f"Кодек: {info.codec.upper()}    "
                                      f"{info.sample_rate} Гц    {info.channels} кан.")
         self.slider.configure(to=info.duration, state="normal")
-        self.slider.set([0.0, info.duration])
-        self.on_range((0.0, info.duration))
+        if same_source and 0 <= saved_start < saved_end <= info.duration:
+            left, right = saved_start, saved_end
+        else:
+            left, right = 0.0, info.duration
+        self.slider.set([left, right])
+        self.on_range((left, right))
+        if same_source:
+            self.waveform.viewport.span = 1 / saved_zoom
+            self.waveform.viewport.start = max(0.0, min(
+                saved_view_start, 1 - self.waveform.viewport.span))
+            self.waveform._view_changed()
         self._sync_fade_overlay()
+        self._loading_source = False
+        self._save()
         self.status.configure(text="Построение звуковой волны…")
         self._preview()
         self._start_waveform(info)
@@ -246,11 +327,15 @@ class AudioCoderApp(ctk.CTk):
         self.right_time.configure(text=clock(max(end, 0)))
         self.length_time.configure(text="Выделено: " + (clock(end - start) if end >= start else "—"))
         self.waveform.set_selection(start, end, self.info.duration)
+        self.settings["clip_start"] = start
+        self.settings["clip_end"] = end
+        self._schedule_save()
         # Do not call _refresh() here: it reconfigures the range slider and
         # previously slowed down every mouse-move during dragging.
 
     def _on_waveform_view(self, zoom):
         self.zoom_label.configure(text=f"×{zoom:.1f}")
+        self._record_view()
 
     def _waveform_edit(self, side, position, finished):
         if self.info is None or self.probing or self.busy:
@@ -278,12 +363,48 @@ class AudioCoderApp(ctk.CTk):
         self._sync_fade_overlay()
         self._save()
 
+    def on_fade_curve(self, parameter, label):
+        if parameter not in ("fade_in_curve", "fade_out_curve"):
+            raise ValueError("Unknown fade parameter")
+        self.settings[parameter] = next(
+            key for key, name in FADE_CURVES.items() if name == label)
+        self._sync_fade_overlay()
+        self._save()
+
     def _sync_fade_overlay(self):
         duration = self.info.duration if self.info else 0.0
-        self.waveform.set_fade(self.settings["fade_enabled"], self.settings["fade_seconds"], duration)
+        self.waveform.set_fade(
+            self.settings["fade_enabled"], self.settings["fade_seconds"], duration,
+            self.settings["fade_in_curve"], self.settings["fade_out_curve"])
+        self.fade_preview.set_curves(
+            self.settings["fade_in_curve"], self.settings["fade_out_curve"])
 
     def _update_fade_state(self):
-        self.fade_menu.configure(state="normal" if self.fade_var.get() else "disabled")
+        enabled = self.fade_var.get() and not self.busy
+        state = "normal" if enabled else "disabled"
+        self.fade_menu.configure(state=state)
+        self.fade_in_menu.configure(state=state)
+        self.fade_out_menu.configure(state=state)
+
+    def _update_audio_options(self):
+        fmt = self.settings["target_format"]
+        vbr = self.settings["vbr_enabled"]
+        self.vbr_checkbox.configure(
+            state="normal" if fmt in ("MP3", "Opus") and not self.busy else "disabled")
+        self.bitrate_menu.configure(
+            state="normal" if fmt in ("MP3", "Opus") and not self.busy
+            and not (fmt == "MP3" and vbr) else "disabled")
+        self.vbr_quality_menu.configure(
+            state="normal" if fmt == "MP3" and vbr and not self.busy else "disabled")
+
+    def on_vbr_changed(self):
+        self.settings["vbr_enabled"] = bool(self.vbr_var.get())
+        self._update_audio_options()
+        self._save()
+
+    def on_vbr_quality(self, quality):
+        self.settings["vbr_quality"] = int(quality)
+        self._save()
 
     def _cancel_preview(self):
         if self._preview_timer is not None:
@@ -361,6 +482,7 @@ class AudioCoderApp(ctk.CTk):
 
     def on_format(self, value):
         self.settings["target_format"] = value
+        self._update_audio_options()
         self._save()
         self._preview()
 
@@ -410,11 +532,9 @@ class AudioCoderApp(ctk.CTk):
         self.open_button.configure(state="disabled" if self.busy or self.probing else "normal")
         self.folder_button.configure(state="disabled" if self.busy else "normal")
         self.format_menu.configure(state="disabled" if self.busy else "normal")
-        self.bitrate_menu.configure(
-            state="normal" if not self.busy and self.settings["target_format"] == "MP3" else "disabled")
+        self._update_audio_options()
         self.fade_checkbox.configure(state="disabled" if self.busy else "normal")
-        self.fade_menu.configure(
-            state="normal" if not self.busy and self.fade_var.get() else "disabled")
+        self._update_fade_state()
         self.slider.configure(state="normal" if self.info is not None and not self.busy and not self.probing else "disabled")
 
     def convert(self):
@@ -428,7 +548,11 @@ class AudioCoderApp(ctk.CTk):
                 self.info, destination, self.settings["target_format"],
                 clip, self.settings["bitrate"],
                 fade_enabled=self.settings["fade_enabled"],
-                fade_seconds=self.settings["fade_seconds"])
+                fade_seconds=self.settings["fade_seconds"],
+                fade_in_curve=self.settings["fade_in_curve"],
+                fade_out_curve=self.settings["fade_out_curve"],
+                vbr_enabled=self.settings["vbr_enabled"],
+                vbr_quality=self.settings["vbr_quality"])
         except (ValueError, OSError) as exc:
             messagebox.showwarning("Параметры", str(exc))
             return
@@ -522,4 +646,5 @@ class AudioCoderApp(ctk.CTk):
         self._stop_playback()
         if self.runner:
             self.runner.cancel()
+        self._save()
         self.destroy()
