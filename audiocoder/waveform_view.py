@@ -74,6 +74,23 @@ def visible_waveform_columns(
     return tuple(values)
 
 
+def level_waveform_columns(columns: tuple[float, ...]) -> tuple[float, ...]:
+    """Fit quiet visible audio into the canvas height without touching sound.
+
+    Waveform peaks are linear PCM amplitudes, often around 0.1–0.2 even in
+    properly mastered audio. Viewing at ×16 should reveal their *shape* rather
+    than a tiny line in the middle of an otherwise empty canvas.
+    """
+    if not columns:
+        return ()
+    ordered = sorted(columns)
+    reference = ordered[min(len(ordered) - 1, int((len(ordered) - 1) * .99))]
+    if reference < .015:
+        return columns  # Do not magnify near-silent background noise.
+    gain = min(12.0, max(1.0, .90 / reference))
+    return tuple(min(1.0, max(0.0, peak * gain)) for peak in columns)
+
+
 class WaveformView(tk.Canvas):
     def __init__(self, master, *, height=118, on_edit=None, on_view_change=None, **kwargs):
         super().__init__(master, height=height, borderwidth=0,
@@ -235,8 +252,8 @@ class WaveformView(tk.Canvas):
         x2 = int(self.viewport.x_at(self.selection[1], w))
         draw.rectangle((max(x1, 0), 0, min(x2, w), h), fill=selected_bg) if x2 >= 0 and x1 <= w else None
         middle = h / 2
-        columns = visible_waveform_columns(
-            self.peaks, self.viewport, w, detail=self.detail_peaks)
+        columns = level_waveform_columns(visible_waveform_columns(
+            self.peaks, self.viewport, w, detail=self.detail_peaks))
         if not columns:
             draw.text((12, middle - 7), "Waveform", fill=inactive)
         else:
