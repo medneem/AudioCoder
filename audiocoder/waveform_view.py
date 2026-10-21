@@ -33,11 +33,43 @@ def round_waveform_image(image: Image.Image, surrounding_color: str,
     return outer
 
 
+def visible_waveform_columns(
+    overview: tuple[float, ...], viewport: WaveformViewport, width: int,
+    *, detail: tuple[float, float, tuple[float, ...]] | None = None,
+) -> tuple[float, ...]:
+    """Project amplitudes onto the *entire* currently visible canvas width.
+
+    Exact-viewport detail overrides the compressed whole-track overview.
+    Panning/zooming away automatically falls back to overview until the next
+    high-resolution worker finishes; no audio decoding occurs in Tk's thread.
+    """
+    if width <= 0 or not overview:
+        return ()
+    start, span, peaks = 0.0, 1.0, overview
+    if detail is not None:
+        begin, end, samples = detail
+        if (samples and abs(begin - viewport.start) < 1e-8
+                and abs(end - viewport.end) < 1e-8):
+            start, span, peaks = begin, end - begin, samples
+    if span <= 0:
+        return (0.0,) * width
+    size = len(peaks)
+    values = []
+    for x in range(width):
+        absolute_start = viewport.start + viewport.span * x / width
+        absolute_end = viewport.start + viewport.span * (x + 1) / width
+        p1 = max(0, min(size - 1, int((absolute_start - start) / span * size)))
+        p2 = max(p1 + 1, min(size, int((absolute_end - start) / span * size)))
+        values.append(max(peaks[p1:p2]))
+    return tuple(values)
+
+
 class WaveformView(tk.Canvas):
     def __init__(self, master, *, height=118, on_edit=None, on_view_change=None, **kwargs):
         super().__init__(master, height=height, borderwidth=0,
                          highlightthickness=0, relief="flat", **kwargs)
         self.peaks: tuple[float, ...] = ()
+        self.detail_peaks: tuple[float, float, tuple[float, ...]] | None = None
         self.selection: tuple[float, float] = (0.0, 1.0)
         self.playhead: float | None = None
         self.corner_radius = 14
@@ -72,6 +104,17 @@ class WaveformView(tk.Canvas):
 
     def set_peaks(self, peaks):
         self.peaks = tuple(clamp(float(p), 0.0, 1.0) for p in peaks)
+        self.detail_peaks = None
+        self.redraw()
+
+    def set_detail_peaks(self, start: float, end: float, peaks):
+        """Retain a zoomed segment without changing marker coordinates."""
+        self.detail_peaks = (
+            start, end, tuple(clamp(float(p), 0.0, 1.0) for p in peaks))
+        self.redraw()
+
+    def clear_detail(self):
+        self.detail_peaks = None
         self.redraw()
 
     def set_selection(self, start: float, end: float, duration: float):
@@ -182,16 +225,12 @@ class WaveformView(tk.Canvas):
         x2 = int(self.viewport.x_at(self.selection[1], w))
         draw.rectangle((max(x1, 0), 0, min(x2, w), h), fill=selected_bg) if x2 >= 0 and x1 <= w else None
         middle = h / 2
-        if not self.peaks:
+        columns = visible_waveform_columns(
+            self.peaks, self.viewport, w, detail=self.detail_peaks)
+        if not columns:
             draw.text((12, middle - 7), "Waveform", fill=inactive)
         else:
-            n = len(self.peaks)
-            for x in range(w):
-                start = int((self.viewport.start + x / w * self.viewport.span) * n)
-                end = int((self.viewport.start + (x + 1) / w * self.viewport.span) * n)
-                start = min(max(start, 0), n - 1)
-                end = min(max(end, start + 1), n)
-                peak = max(self.peaks[start:end])
+            for x, peak in enumerate(columns):
                 half = max(0.5, peak * (middle - 5))
                 draw.line((x, int(middle - half), x, int(middle + half)),
                           fill=active if x1 <= x <= x2 else inactive)
