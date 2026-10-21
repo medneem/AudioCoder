@@ -41,6 +41,24 @@ class FadeCurvesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fade_gain("wrong", .3)
 
+    def test_fade_charts_use_same_muted_palette_as_editor(self):
+        from PIL import ImageColor
+        from audiocoder.palette import (FADE_CHART_BACKGROUND,
+                                         FADE_CHART_LINE, FADE_CHART_TEXT)
+        for dark in (False, True):
+            with self.subTest(dark=dark):
+                img = draw_fade_diagrams("log", "cub",
+                                         width=600, height=170, dark=dark)
+                self.assertEqual(
+                    img.getpixel((0, 0)),
+                    ImageColor.getrgb(FADE_CHART_BACKGROUND[int(dark)]))
+                self.assertNotEqual(
+                    FADE_CHART_LINE[int(dark)],
+                    FADE_CHART_BACKGROUND[int(dark)])
+                self.assertNotEqual(
+                    FADE_CHART_TEXT[int(dark)],
+                    FADE_CHART_BACKGROUND[int(dark)])
+
     def test_graph_preview_has_real_axes_and_antialias(self):
         img = draw_fade_diagrams("log", "cub", width=800, height=180)
         self.assertEqual(img.size, (800, 180))

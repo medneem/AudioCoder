@@ -21,12 +21,15 @@ from .fade import FADE_CURVES
 from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
+from .palette import (CARD, CARD_BORDER, CANCEL_BG, CANCEL_HOVER,
+                      DND_BORDER, FADE_BORDER, FADE_CARD, FADE_DIVIDER,
+                      ZOOM_ROW, theme_color, theme_path)
 from .selection import ClipRange, clock
 from .settings import DEFAULTS, load_settings, save_settings
 
 
 ctk.set_appearance_mode("Light")
-ctk.set_default_color_theme("blue")
+ctk.set_default_color_theme(str(theme_path()))
 
 
 def short_waveform_time(seconds: float) -> str:
@@ -138,7 +141,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.slider._canvas.bind("<ButtonRelease-1>", self._slider_released, add="+")
         # Approved mockup variant 3: compact quality rows, highlighted fade
         # card, and a distinct folder strip, without an internal scrollbar.
-        zoom_row = ctk.CTkFrame(frame, fg_color=("#F7F9FD", "#293544"),
+        zoom_row = ctk.CTkFrame(frame, fg_color=ZOOM_ROW,
                                 corner_radius=12)
         zoom_row.grid(row=7, column=0, sticky="ew", padx=16, pady=(1, 5))
         zoom_row.grid_columnconfigure(0, weight=1)
@@ -171,7 +174,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             state="disabled", command=self.toggle_play)
         self.play_button.pack(side="left", padx=(0, 10))
         self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
-                                            fg_color="gray40", command=self.cancel)
+                                            fg_color=CANCEL_BG, hover_color=CANCEL_HOVER,
+                                            command=self.cancel)
         self.cancel_button.pack(side="left", padx=(0, 10))
         self.run_button = ctk.CTkButton(buttons, text="Конвертировать", width=170,
                                          state="disabled", command=self.convert)
@@ -184,8 +188,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _build_codec_card(self, frame):
         """Source encoding, bitrate, and optional variable-bitrate controls."""
         self.codec_card = ctk.CTkFrame(
-            frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
-            border_width=1, border_color=("#E3E8F0", "#405065"))
+            frame, fg_color=CARD, corner_radius=14,
+            border_width=1, border_color=CARD_BORDER)
         self.codec_card.grid(row=8, column=0, sticky="ew", padx=16, pady=(0, 5))
         codec_row = ctk.CTkFrame(self.codec_card, fg_color="transparent")
         codec_row.pack(fill="x", padx=12, pady=(7, 4))
@@ -223,8 +227,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _build_fade_card(self, frame):
         """Independent fade-in/out curves without inline help diagrams."""
         self.fade_card = ctk.CTkFrame(
-            frame, fg_color=("#EEF4FF", "#26364F"), corner_radius=14,
-            border_width=1, border_color=("#DAE7FA", "#455D7D"))
+            frame, fg_color=FADE_CARD, corner_radius=14,
+            border_width=1, border_color=FADE_BORDER)
         self.fade_card.grid(row=9, column=0, sticky="ew", padx=16, pady=(0, 5))
         fades = ctk.CTkFrame(self.fade_card, fg_color="transparent")
         fades.pack(fill="x", padx=12, pady=(7, 5))
@@ -241,7 +245,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.fade_menu.pack(side="left")
         ctk.CTkFrame(
             self.fade_card, height=1, corner_radius=0,
-            fg_color=("#D7E5F7", "#445D80")
+            fg_color=FADE_DIVIDER
         ).pack(fill="x", padx=17)
         curves = ctk.CTkFrame(self.fade_card, fg_color="transparent")
         curves.pack(fill="x", padx=12, pady=(5, 7))
@@ -267,8 +271,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _build_folder_card(self, frame):
         """Output directory picker; destination label lives in status only."""
         self.folder_card = ctk.CTkFrame(
-            frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
-            border_width=1, border_color=("#E3E8F0", "#405065"))
+            frame, fg_color=CARD, corner_radius=14,
+            border_width=1, border_color=CARD_BORDER)
         self.folder_card.grid(row=10, column=0, sticky="ew", padx=16, pady=(0, 5))
         self.folder_card.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.folder_card, text="📁", width=38).grid(
@@ -339,7 +343,10 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _drop_enter(self, event):
         if self.busy or self.probing:
             return REFUSE_DROP
-        self.waveform.configure(highlightthickness=2, highlightbackground="#2F87DC")
+        self.waveform.configure(
+            highlightthickness=2,
+            highlightbackground=theme_color(
+                DND_BORDER, dark=ctk.get_appearance_mode() == "Dark"))
         return COPY
 
     def _drop_leave(self, event=None):

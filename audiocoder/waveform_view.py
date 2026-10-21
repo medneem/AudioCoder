@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw, ImageTk
 
 from .waveform_navigation import WaveformViewport, clamp
 from .fade import fade_gain
+from .palette import (FADE_GUIDE, PLAYHEAD, WAVE_ACTIVE, WAVE_BACKGROUND,
+                      WAVE_INACTIVE, WAVE_SELECTION, theme_color)
 
 
 
@@ -175,7 +177,7 @@ class WaveformView(tk.Canvas):
         edge = self.corner_radius if x < self.corner_radius or x > w - self.corner_radius else 0
         self.coords(self._playhead_item, x, edge, x, h - edge)
         self.itemconfigure(self._playhead_item, state="normal",
-                           fill="#E95757" if dark else "#CF2535")
+                           fill=theme_color(PLAYHEAD, dark=dark))
         self.tag_raise(self._playhead_item)
 
     def _view_changed(self):
@@ -237,10 +239,10 @@ class WaveformView(tk.Canvas):
         self._pending = False
         w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
         dark = ctk.get_appearance_mode() == "Dark"
-        background = "#202938" if dark else "#F1F5F9"
-        selected_bg = "#243B55" if dark else "#DCEBFB"
-        inactive = "#7A889A" if dark else "#A7B4C4"
-        active = "#53B5FF" if dark else "#1874C9"
+        background = theme_color(WAVE_BACKGROUND, dark=dark)
+        selected_bg = theme_color(WAVE_SELECTION, dark=dark)
+        inactive = theme_color(WAVE_INACTIVE, dark=dark)
+        active = theme_color(WAVE_ACTIVE, dark=dark)
         # The raw Tk canvas stays rectangular. Blend the four outer corners
         # into the CTkFrame behind it, while retaining normal TkDND bindings.
         surrounding = self.master._apply_appearance_mode(
@@ -265,13 +267,13 @@ class WaveformView(tk.Canvas):
             if 0 <= x < w:
                 draw.line((x, 0, x, h), fill=active, width=1)
         if self.fade_enabled and self.fade_fraction > 0:
-            # Red logarithmic envelope guides like the user's reference sketch.
+            # Subtle warm waveform guides distinguish fades from the audio.
             # They are visual only; the same afade curve is applied at export.
             length = max(0.0, self.selection[1] - self.selection[0])
             fade_frac = min(self.fade_fraction, length / 2)
             if fade_frac > 0:
                 top, bottom = 9, h - 9
-                fade_colour = "#E04444" if dark else "#D92D2D"
+                fade_colour = theme_color(FADE_GUIDE, dark=dark)
                 for begin, end, direction, curve in (
                     (self.selection[0], self.selection[0] + fade_frac,
                      "in", self.fade_in_curve),
