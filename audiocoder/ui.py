@@ -70,7 +70,13 @@ class AudioCoderApp(ctk.CTk):
             header, text="❔ Справка", width=110, command=self.open_help)
         self.help_button.pack(side="right", padx=(0, 12))
 
-        frame = ctk.CTkFrame(self, corner_radius=14)
+        # Scroll only the editor controls, never the transport/status footer.
+        # A fixed-height CTkFrame clipped the lower controls when the desktop
+        # scale was 125–150% or the screen had limited vertical space.
+        self.editor_panel = ctk.CTkScrollableFrame(
+            self, corner_radius=14, orientation="vertical",
+            label_text=None, scrollbar_button_color=("gray75", "gray35"))
+        frame = self.editor_panel
         frame.grid(row=1, column=0, sticky="nsew", padx=22, pady=8)
         frame.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(frame, text="Исходный аудиофайл", font=ctk.CTkFont(size=15, weight="bold")).grid(
@@ -185,6 +191,7 @@ class AudioCoderApp(ctk.CTk):
         self.target_label.grid(row=13, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
+        self.footer = footer
         footer.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 20))
         footer.grid_columnconfigure(0, weight=1)
         self.status = ctk.CTkLabel(footer, text="Готов к работе", anchor="w")

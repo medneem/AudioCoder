@@ -47,6 +47,34 @@ class UITests(unittest.TestCase):
         help_window.destroy()
         self.window._help_window = None
 
+    def test_compact_window_can_scroll_without_hiding_playback_controls(self):
+        # Reproduce the problematic 810 x 650 window size. The central editor
+        # must scroll while the footer stays visible even at limited height.
+        import customtkinter as ctk
+        self.assertIsInstance(self.window.editor_panel, ctk.CTkScrollableFrame)
+        self.assertEqual(self.window.footer.winfo_manager(), "grid")
+        self.window.deiconify()
+        try:
+            self.window.geometry("810x650")
+            self.window.update_idletasks()
+            scroll_canvas = self.window.editor_panel._parent_canvas
+            top, bottom = scroll_canvas.yview()
+            self.assertLess(bottom, 1.0, "All editor controls unexpectedly fit; test did not exercise overflow")
+            self.assertAlmostEqual(top, 0.0)
+            self.assertLessEqual(
+                self.window.footer.winfo_rooty() + self.window.footer.winfo_height(),
+                self.window.winfo_rooty() + self.window.winfo_height() + 4,
+                "Playback and conversion footer is outside the window",
+            )
+            scroll_canvas.yview_moveto(1.0)
+            self.window.update_idletasks()
+            self.assertGreater(scroll_canvas.yview()[0], top)
+            self.assertEqual(self.window.run_button.winfo_manager(), "pack")
+        finally:
+            self.window.geometry("920x710")
+            self.window.editor_panel._parent_canvas.yview_moveto(0.0)
+            self.window.withdraw()
+
     def test_slider_controls_and_time_labels(self):
         self.window.info = None
         self.window._refresh()
