@@ -94,7 +94,6 @@ class WaveformTests(unittest.TestCase):
             self.assertGreater(max(overview), .05)
             self.assertGreater(max(detailed), .05)
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
 
 if __name__ == "__main__":
     unittest.main()
