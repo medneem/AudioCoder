@@ -16,7 +16,7 @@ from .player import AudioPlayer, listening_window
 from .waveform import extract_waveform
 from .waveform_view import WaveformView
 from .fade import FADE_CURVES
-from .fade_preview import FadePreview
+from .fade_help import FadeHelpWindow
 from .selection import ClipRange, clock
 from .settings import DEFAULTS, load_settings, save_settings
 
@@ -29,8 +29,8 @@ class AudioCoderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"AudioCoder {APP_VERSION}")
-        self.geometry("920x930")
-        self.minsize(810, 810)
+        self.geometry("920x710")
+        self.minsize(810, 650)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.events = queue.Queue()
         self.info = None
@@ -45,6 +45,7 @@ class AudioCoderApp(ctk.CTk):
         self._playing = False
         self._save_timer = None
         self._loading_source = False
+        self._help_window = None
         try:
             self.settings = load_settings()
         except (ValueError, OSError) as exc:
@@ -65,6 +66,9 @@ class AudioCoderApp(ctk.CTk):
             "Light": "Светлая", "Dark": "Тёмная", "System": "Системная",
         }[self.settings["appearance"]])
         self.appearance_menu.pack(side="right", padx=(0, 16))
+        self.help_button = ctk.CTkButton(
+            header, text="❔ Справка", width=110, command=self.open_help)
+        self.help_button.pack(side="right", padx=(0, 12))
 
         frame = ctk.CTkFrame(self, corner_radius=14)
         frame.grid(row=1, column=0, sticky="nsew", padx=22, pady=8)
@@ -167,27 +171,18 @@ class AudioCoderApp(ctk.CTk):
             command=lambda label: self.on_fade_curve("fade_out_curve", label))
         self.fade_out_menu.set(FADE_CURVES[self.settings["fade_out_curve"]])
         self.fade_out_menu.pack(side="left")
-        self.fade_preview = FadePreview(frame, height=165)
-        self.fade_preview.grid(row=12, column=0, sticky="ew", padx=24, pady=(0, 3))
-        self.fade_preview.set_curves(
-            self.settings["fade_in_curve"], self.settings["fade_out_curve"])
-        ctk.CTkLabel(
-            frame, text="Графики формы: схема 1 секунды (0–0,2 / 0,8–1,0 c). "
-                        "Длительность эффекта задаётся выше.",
-            font=ctk.CTkFont(size=11)
-        ).grid(row=13, column=0, sticky="w", padx=24, pady=(0, 6))
         self._update_fade_state()
         self._sync_fade_overlay()
 
         destination = ctk.CTkFrame(frame, fg_color="transparent")
-        destination.grid(row=14, column=0, sticky="ew", padx=18, pady=8)
+        destination.grid(row=12, column=0, sticky="ew", padx=18, pady=8)
         destination.grid_columnconfigure(0, weight=1)
         self.folder_label = ctk.CTkLabel(destination, text="Сохранение: рядом с оригиналом", anchor="w")
         self.folder_label.grid(row=0, column=0, sticky="ew")
         self.folder_button = ctk.CTkButton(destination, text="Изменить", width=100, command=self.choose_folder)
         self.folder_button.grid(row=0, column=1)
         self.target_label = ctk.CTkLabel(frame, text="Результат: —", anchor="w")
-        self.target_label.grid(row=15, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.target_label.grid(row=13, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 20))
@@ -241,8 +236,18 @@ class AudioCoderApp(ctk.CTk):
         self.settings["appearance"] = theme
         ctk.set_appearance_mode(theme)
         self.waveform.redraw()
-        self.fade_preview.redraw()
+        if self._help_window is not None and self._help_window.winfo_exists():
+            self._help_window.refresh_theme()
         self._save()
+
+    def open_help(self):
+        """Show one reusable reference window with every supported fade curve."""
+        if self._help_window is not None and self._help_window.winfo_exists():
+            self._help_window.lift()
+            self._help_window.focus()
+            return
+        self._help_window = FadeHelpWindow(self)
+        self._help_window.focus()
 
     def choose_file(self):
         folder = self.settings["last_source_dir"]
@@ -375,8 +380,6 @@ class AudioCoderApp(ctk.CTk):
         duration = self.info.duration if self.info else 0.0
         self.waveform.set_fade(
             self.settings["fade_enabled"], self.settings["fade_seconds"], duration,
-            self.settings["fade_in_curve"], self.settings["fade_out_curve"])
-        self.fade_preview.set_curves(
             self.settings["fade_in_curve"], self.settings["fade_out_curve"])
 
     def _update_fade_state(self):
@@ -647,4 +650,6 @@ class AudioCoderApp(ctk.CTk):
         if self.runner:
             self.runner.cancel()
         self._save()
+        if self._help_window is not None and self._help_window.winfo_exists():
+            self._help_window.destroy()
         self.destroy()

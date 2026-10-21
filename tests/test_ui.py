@@ -23,6 +23,30 @@ class UITests(unittest.TestCase):
     def tearDownClass(cls):
         cls.window._close()
 
+    def test_help_contains_every_fade_type_and_not_on_main_window(self):
+        from audiocoder.fade import FADE_CURVES
+        from audiocoder.fade_help import FADE_DESCRIPTIONS
+        self.assertFalse(hasattr(self.window, "fade_preview"))
+        self.assertEqual(set(FADE_DESCRIPTIONS), set(FADE_CURVES))
+        self.assertEqual(self.window.help_button.cget("text"), "❔ Справка")
+        self.window.open_help()
+        help_window = self.window._help_window
+        self.assertTrue(help_window.winfo_exists())
+        self.assertEqual(len(help_window._diagrams), len(FADE_CURVES))
+        self.assertEqual(
+            [diagram._curves for diagram in help_window._diagrams],
+            [(code, code) for code in FADE_CURVES])
+        self.window.open_help()
+        self.assertIs(self.window._help_window, help_window)
+        with patch.object(help_window, "refresh_theme") as refresh:
+            with patch("audiocoder.ui.save_settings"):
+                self.window.on_appearance("Тёмная")
+            refresh.assert_called_once()
+        with patch("audiocoder.ui.save_settings"):
+            self.window.on_appearance("Светлая")
+        help_window.destroy()
+        self.window._help_window = None
+
     def test_slider_controls_and_time_labels(self):
         self.window.info = None
         self.window._refresh()
