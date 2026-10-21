@@ -60,7 +60,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(9, 3))
         self.main_heading = ctk.CTkLabel(header, text="AudioCoder",
                                          font=ctk.CTkFont(family=FONT_FAMILY, size=TITLE_SIZE, weight="bold"))
         self.main_heading.pack(side="left")
@@ -76,26 +76,28 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             header, text="❔ Справка", width=110, command=self.open_help)
         self.help_button.pack(side="right", padx=(0, 12))
 
-        # Scroll only the editor controls, never the transport/status footer.
-        # A fixed-height CTkFrame clipped the lower controls when the desktop
-        # scale was 125–150% or the screen had limited vertical space.
-        self.editor_panel = ctk.CTkScrollableFrame(
-            self, corner_radius=14, orientation="vertical",
-            label_text=None, scrollbar_button_color=("gray75", "gray35"))
+        # The entire editor is a regular frame: no nested vertical scrolling.
+        # Keep height compact, and enforce its requested size after layout so
+        # Windows DPI scaling cannot silently clip settings below the waveform.
+        self.editor_panel = ctk.CTkFrame(self, corner_radius=14)
         frame = self.editor_panel
-        frame.grid(row=1, column=0, sticky="nsew", padx=22, pady=8)
+        frame.grid(row=1, column=0, sticky="nsew", padx=17, pady=3)
         frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(frame, text="🎵 Исходный аудиофайл · перетащите файл на волну").grid(
-            row=0, column=0, sticky="w", padx=18, pady=(16, 5))
+        source_header = ctk.CTkFrame(frame, fg_color="transparent")
+        source_header.grid(row=0, column=0, sticky="ew", padx=16, pady=(5, 0))
+        ctk.CTkLabel(source_header, text="🎵 Исходный аудиофайл · перетащите файл на волну").pack(
+            side="left")
+        self.open_button = ctk.CTkButton(
+            source_header, text="Выбрать файл", width=130, height=28,
+            command=self.choose_file)
+        self.open_button.pack(side="right")
         self.path_label = ctk.CTkLabel(frame, text="Файл не выбран", anchor="w")
-        self.path_label.grid(row=1, column=0, sticky="ew", padx=18)
-        self.open_button = ctk.CTkButton(frame, text="Выбрать файл", command=self.choose_file)
-        self.open_button.grid(row=2, column=0, sticky="w", padx=18, pady=(8, 12))
+        self.path_label.grid(row=1, column=0, sticky="ew", padx=16)
         self.metadata = ctk.CTkLabel(frame, text="Длительность: —    Кодек: —", anchor="w")
-        self.metadata.grid(row=3, column=0, sticky="ew", padx=18)
+        self.metadata.grid(row=3, column=0, sticky="ew", padx=16)
 
         times = ctk.CTkFrame(frame, fg_color="transparent")
-        times.grid(row=4, column=0, sticky="ew", padx=18, pady=(18, 4))
+        times.grid(row=4, column=0, sticky="ew", padx=16, pady=(4, 1))
         times.grid_columnconfigure(1, weight=1)
         self.left_time = ctk.CTkLabel(times, text="00:00:00.000")
         self.left_time.grid(row=0, column=0, sticky="w")
@@ -104,9 +106,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.right_time = ctk.CTkLabel(times, text="00:00:00.000")
         self.right_time.grid(row=0, column=2, sticky="e")
         self.waveform = WaveformView(
-            frame, height=140, on_edit=self._waveform_edit,
+            frame, height=120, on_edit=self._waveform_edit,
             on_view_change=self._on_waveform_view)
-        self.waveform.grid(row=5, column=0, sticky="ew", padx=24, pady=(5, 4))
+        self.waveform.grid(row=5, column=0, sticky="ew", padx=18, pady=(1, 2))
         self.waveform.drop_target_register(DND_FILES)
         self.waveform.dnd_bind("<<DropEnter>>", self._drop_enter)
         self.waveform.dnd_bind("<<DropLeave>>", self._drop_leave)
@@ -114,32 +116,32 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.slider = CTkRangeSlider(
             frame, from_=0, to=1, height=20, state="disabled",
             command=(self._left_moved, self._right_moved))
-        self.slider.grid(row=6, column=0, sticky="ew", padx=24, pady=(5, 17))
+        self.slider.grid(row=6, column=0, sticky="ew", padx=18, pady=(2, 6))
         # The vendored range slider handles mouse events on its inner Canvas.
         # Keep its internal drag handlers; add only a release notification.
         self.slider._canvas.bind("<ButtonRelease-1>", self._slider_released, add="+")
         # Approved mockup variant 3: compact quality rows, highlighted fade
-        # card, and a distinct folder strip. Keep all controls scrollable.
+        # card, and a distinct folder strip, without an internal scrollbar.
         zoom_row = ctk.CTkFrame(frame, fg_color=("#F7F9FD", "#293544"),
                                 corner_radius=12)
-        zoom_row.grid(row=7, column=0, sticky="ew", padx=18, pady=(3, 9))
+        zoom_row.grid(row=7, column=0, sticky="ew", padx=16, pady=(1, 5))
         zoom_row.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             zoom_row, text="◈  Колесо — масштаб · Правая кнопка — сдвиг · Левая — границы",
-            anchor="w").grid(row=0, column=0, sticky="ew", padx=(12, 5), pady=8)
+            anchor="w").grid(row=0, column=0, sticky="ew", padx=(12, 5), pady=3)
         self.zoom_label = ctk.CTkLabel(zoom_row, text="×1.0", width=54)
         self.zoom_label.grid(row=0, column=1, padx=8)
         ctk.CTkButton(
-            zoom_row, text="↻ Сброс", width=86, height=32,
+            zoom_row, text="↻ Сброс", width=86, height=28,
             command=self.waveform.reset_view
-        ).grid(row=0, column=2, padx=(2, 10), pady=6)
+        ).grid(row=0, column=2, padx=(2, 10), pady=3)
 
         self.codec_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
-        self.codec_card.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 9))
+        self.codec_card.grid(row=8, column=0, sticky="ew", padx=16, pady=(0, 5))
         codec_row = ctk.CTkFrame(self.codec_card, fg_color="transparent")
-        codec_row.pack(fill="x", padx=14, pady=(14, 9))
+        codec_row.pack(fill="x", padx=12, pady=(7, 4))
         ctk.CTkLabel(codec_row, text="♫", width=28).pack(side="left")
         ctk.CTkLabel(codec_row, text="Формат").pack(side="left", padx=(4, 8))
         self.format_menu = ctk.CTkOptionMenu(
@@ -158,7 +160,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.vbr_checkbox.pack(side="left")
 
         quality_row = ctk.CTkFrame(self.codec_card, fg_color="transparent")
-        quality_row.pack(fill="x", padx=14, pady=(0, 13))
+        quality_row.pack(fill="x", padx=12, pady=(0, 7))
         ctk.CTkLabel(quality_row, text="▥", width=28).pack(side="left")
         ctk.CTkLabel(
             quality_row, text="Качество MP3 VBR (0 — лучшее)"
@@ -173,9 +175,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.fade_card = ctk.CTkFrame(
             frame, fg_color=("#EEF4FF", "#26364F"), corner_radius=14,
             border_width=1, border_color=("#DAE7FA", "#455D7D"))
-        self.fade_card.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 9))
+        self.fade_card.grid(row=9, column=0, sticky="ew", padx=16, pady=(0, 5))
         fades = ctk.CTkFrame(self.fade_card, fg_color="transparent")
-        fades.pack(fill="x", padx=14, pady=(13, 10))
+        fades.pack(fill="x", padx=12, pady=(7, 5))
         self.fade_var = ctk.BooleanVar(value=self.settings["fade_enabled"])
         self.fade_checkbox = ctk.CTkCheckBox(
             fades, text="Плавное появление и затухание",
@@ -192,7 +194,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             fg_color=("#D7E5F7", "#445D80")
         ).pack(fill="x", padx=17)
         curves = ctk.CTkFrame(self.fade_card, fg_color="transparent")
-        curves.pack(fill="x", padx=14, pady=(12, 14))
+        curves.pack(fill="x", padx=12, pady=(5, 7))
         curve_names = list(FADE_CURVES.values())
         ctk.CTkLabel(curves, text="⌁", width=28).pack(side="left")
         ctk.CTkLabel(curves, text="Появление").pack(side="left", padx=(4, 8))
@@ -214,30 +216,30 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.folder_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
-        self.folder_card.grid(row=10, column=0, sticky="ew", padx=18, pady=(0, 7))
+        self.folder_card.grid(row=10, column=0, sticky="ew", padx=16, pady=(0, 4))
         self.folder_card.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.folder_card, text="📁", width=38).grid(
-            row=0, column=0, padx=(12, 0), pady=12)
+            row=0, column=0, padx=(12, 0), pady=6)
         self.folder_label = ctk.CTkLabel(
             self.folder_card, text="Папка: рядом с оригиналом", anchor="w")
-        self.folder_label.grid(row=0, column=1, sticky="ew", padx=(6, 10), pady=12)
+        self.folder_label.grid(row=0, column=1, sticky="ew", padx=(6, 10), pady=6)
         self.folder_button = ctk.CTkButton(
-            self.folder_card, text="📁 Изменить", width=136, height=35,
+            self.folder_card, text="📁 Изменить", width=136, height=30,
             command=self.choose_folder)
-        self.folder_button.grid(row=0, column=2, padx=(0, 12), pady=10)
+        self.folder_button.grid(row=0, column=2, padx=(0, 12), pady=6)
         self.target_label = ctk.CTkLabel(
             frame, text="Результат: —", anchor="w")
         self.target_label.grid(
-            row=11, column=0, sticky="ew", padx=24, pady=(0, 10))
+            row=11, column=0, sticky="ew", padx=20, pady=(0, 3))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         self.footer = footer
-        footer.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 20))
+        footer.grid(row=2, column=0, sticky="ew", padx=17, pady=(2, 8))
         footer.grid_columnconfigure(0, weight=1)
         self.status = ctk.CTkLabel(footer, text="Готов к работе", anchor="w")
         self.status.grid(row=0, column=0, sticky="ew")
         self.progress = ctk.CTkProgressBar(footer)
-        self.progress.grid(row=1, column=0, sticky="ew", pady=7)
+        self.progress.grid(row=1, column=0, sticky="ew", pady=3)
         self.progress.set(0)
         buttons = ctk.CTkFrame(footer, fg_color="transparent")
         buttons.grid(row=2, column=0, sticky="e")
@@ -253,7 +255,19 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.run_button.pack(side="left")
         self._refresh()
         self.body_font = apply_body_font(self, excluded=(self.main_heading,))
+        self._fit_editor_to_window()
         self.after(100, self._poll)
+
+    def _fit_editor_to_window(self):
+        """Make the entire fixed editor visible rather than hiding its bottom.
+
+        Grid's requested height reflects CustomTkinter DPI/font scaling, so
+        enforce it instead of relying on one magic minimum for every monitor.
+        """
+        self.update_idletasks()
+        minimum = max(650, self.winfo_reqheight())
+        self.minsize(810, minimum)
+        self.geometry(f"920x{max(710, minimum)}")
 
     def _save(self):
         if self._save_timer is not None:
