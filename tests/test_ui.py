@@ -262,12 +262,19 @@ class UITests(unittest.TestCase):
             self.window.waveform.viewport.reset()
             self.window.waveform.viewport.zoom(3.8, .5)
             self.window.waveform.set_selection(0, 143.901, 143.901)
-            with patch.object(self.window.editor_panel, "_apply_appearance_mode",
-                              return_value="gray86"):
-                self.window.waveform._paint()
-            self.assertIsNotNone(self.window.waveform._image)
-            self.assertTrue(self.window.waveform.itemcget(
-                self.window.waveform._image_item, "image"))
+            from audiocoder.waveform_view import tk_background_rgb
+            for color, expected in (("gray86", (219, 219, 219)),
+                                    ("gray13", (33, 33, 33)),
+                                    ("#DBDBDB", (219, 219, 219))):
+                with self.subTest(color=color):
+                    self.assertEqual(
+                        tk_background_rgb(self.window.waveform, color), expected)
+                    with patch.object(self.window.editor_panel, "_apply_appearance_mode",
+                                      return_value=color):
+                        self.window.waveform._paint()
+                    self.assertIsNotNone(self.window.waveform._image)
+                    self.assertTrue(self.window.waveform.itemcget(
+                        self.window.waveform._image_item, "image"))
         finally:
             self.window.withdraw()
 
