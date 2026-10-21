@@ -297,6 +297,29 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._help_window = FadeHelpWindow(self)
         self._help_window.focus()
 
+    def _drop_enter(self, event):
+        if self.busy or self.probing:
+            return REFUSE_DROP
+        self.waveform.configure(highlightthickness=2, highlightbackground="#2F87DC")
+        return COPY
+
+    def _drop_leave(self, event=None):
+        self.waveform.configure(highlightthickness=0)
+        return COPY
+
+    def _on_wave_drop(self, event):
+        """Windows Explorer CF_HDROP delivered as a Tcl file list."""
+        self._drop_leave()
+        if self.busy or self.probing:
+            return REFUSE_DROP
+        try:
+            path = dropped_audio_path(event.data, self.tk.splitlist)
+        except ValueError as exc:
+            messagebox.showwarning("Аудиофайл", str(exc), parent=self)
+            return REFUSE_DROP
+        self.open_file(path)
+        return COPY
+
     def choose_file(self):
         folder = self.settings["last_source_dir"]
         if not folder or not Path(folder).is_dir():
