@@ -1,3 +1,4 @@
 # CTkRangeSlider 0.3 relies on CustomTkinter 5.2.x internal APIs.
 customtkinter==5.2.2
 pillow>=11,<13
+tkinterdnd2==0.4.3
