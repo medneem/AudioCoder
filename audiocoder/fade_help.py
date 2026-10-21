@@ -105,7 +105,7 @@ class FadeHelpWindow(ctk.CTkToplevel):
             preview.set_curves(curve_id, curve_id)
             self._diagrams.append(preview)
 
-        self.after(40, self.lift)
+        self.lift()
 
     def refresh_theme(self):
         for diagram in self._diagrams:
