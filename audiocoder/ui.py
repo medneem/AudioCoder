@@ -12,6 +12,7 @@ from version import APP_VERSION
 from .converter import (BITRATES, FORMATS, ConversionCancelled,
                         ConversionJob, ConversionRunner, output_path)
 from .media import probe_audio
+from .player import AudioPlayer, listening_window
 from .waveform import extract_waveform
 from .waveform_view import WaveformView
 from .selection import ClipRange, clock
@@ -36,6 +37,10 @@ class AudioCoderApp(ctk.CTk):
         self.probing = False
         self.closing = False
         self.source_sequence = 0
+        self.player = AudioPlayer()
+        self._preview_timer = None
+        self._last_drag_side = None
+        self._playing = False
         try:
             self.settings = load_settings()
         except (ValueError, OSError) as exc:
@@ -80,9 +85,13 @@ class AudioCoderApp(ctk.CTk):
         self.right_time.grid(row=0, column=2, sticky="e")
         self.waveform = WaveformView(frame, height=122)
         self.waveform.grid(row=5, column=0, sticky="ew", padx=24, pady=(5, 4))
-        self.slider = CTkRangeSlider(frame, from_=0, to=1, height=20, state="disabled",
-                                     command=self.on_range)
+        self.slider = CTkRangeSlider(
+            frame, from_=0, to=1, height=20, state="disabled",
+            command=(self._left_moved, self._right_moved))
         self.slider.grid(row=6, column=0, sticky="ew", padx=24, pady=(5, 17))
+        # The vendored range slider handles mouse events on its inner Canvas.
+        # Keep its internal drag handlers; add only a release notification.
+        self.slider._canvas.bind("<ButtonRelease-1>", self._slider_released, add="+")
 
         options = ctk.CTkFrame(frame, fg_color="transparent")
         options.grid(row=7, column=0, sticky="w", padx=18, pady=6)
@@ -117,6 +126,10 @@ class AudioCoderApp(ctk.CTk):
         self.progress.set(0)
         buttons = ctk.CTkFrame(footer, fg_color="transparent")
         buttons.grid(row=2, column=0, sticky="e")
+        self.play_button = ctk.CTkButton(
+            buttons, text="▶ Воспроизвести", width=155,
+            state="disabled", command=self.toggle_play)
+        self.play_button.pack(side="left", padx=(0, 10))
         self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
                                             fg_color="gray40", command=self.cancel)
         self.cancel_button.pack(side="left", padx=(0, 10))
@@ -153,6 +166,7 @@ class AudioCoderApp(ctk.CTk):
     def open_file(self, path: Path):
         if self.busy or self.probing:
             return
+        self._stop_playback()
         self.info = None
         self.source_sequence += 1
         self.waveform.set_peaks(())
@@ -203,6 +217,79 @@ class AudioCoderApp(ctk.CTk):
         self.waveform.set_selection(start, end, self.info.duration)
         self._refresh()
 
+    def _cancel_preview(self):
+        if self._preview_timer is not None:
+            self.after_cancel(self._preview_timer)
+            self._preview_timer = None
+
+    def _stop_playback(self):
+        self._cancel_preview()
+        self._last_drag_side = None
+        self.player.stop()
+        self._playing = False
+        self.waveform.set_playhead(None)
+        self.play_button.configure(text="▶ Воспроизвести")
+
+    def _left_moved(self, value):
+        self._slider_moved("left")
+
+    def _right_moved(self, value):
+        self._slider_moved("right")
+
+    def _slider_moved(self, side):
+        self.on_range(self.slider.get())
+        if self.info is None or self.busy or self.probing:
+            return
+        self._cancel_preview()
+        self.player.stop()
+        self._playing = False
+        self.waveform.set_playhead(None)
+        self.play_button.configure(text="▶ Воспроизвести")
+        self._last_drag_side = side
+        # Don't restart FFplay for every pixel; play when the thumb rests.
+        self._preview_timer = self.after(250, lambda: self._start_preview(side))
+
+    def _start_preview(self, side):
+        self._preview_timer = None
+        self._play_segment(side)
+
+    def _slider_released(self, event=None):
+        if self._last_drag_side is None:
+            return
+        side = self._last_drag_side
+        self._last_drag_side = None
+        pending = self._preview_timer is not None
+        self._cancel_preview()
+        if pending:
+            self._play_segment(side)
+
+    def _play_segment(self, mode):
+        if self.info is None or self.busy or self.probing:
+            return
+        try:
+            left, right = self.slider.get()
+            clip = ClipRange(float(left), float(right), self.info.duration)
+            window = listening_window(mode, clip.start, clip.end)
+        except ValueError:
+            return
+        self.player.play(
+            self.info.path, window,
+            lambda generation, message: self.events.put(
+                ("play_error", (generation, message))))
+        self._playing = True
+        self.waveform.set_playhead(window.start, self.info.duration)
+        self.play_button.configure(text="■ Остановить")
+        self.status.configure(text="Прослушивание…")
+
+    def toggle_play(self):
+        if self._playing or self._preview_timer is not None:
+            self._stop_playback()
+            self.status.configure(text="Воспроизведение остановлено")
+        else:
+            self._cancel_preview()
+            self._last_drag_side = None
+            self._play_segment("selection")
+
     def on_format(self, value):
         self.settings["target_format"] = value
         self._save()
@@ -250,6 +337,7 @@ class AudioCoderApp(ctk.CTk):
             except ValueError:
                 enabled = False
         self.run_button.configure(state="normal" if enabled else "disabled")
+        self.play_button.configure(state="normal" if enabled else "disabled")
         self.open_button.configure(state="disabled" if self.busy or self.probing else "normal")
         self.folder_button.configure(state="disabled" if self.busy else "normal")
         self.format_menu.configure(state="disabled" if self.busy else "normal")
@@ -269,6 +357,7 @@ class AudioCoderApp(ctk.CTk):
         except (ValueError, OSError) as exc:
             messagebox.showwarning("Параметры", str(exc))
             return
+        self._stop_playback()
         self.runner = ConversionRunner()
         self.busy = True
         self.progress.set(0)
@@ -320,6 +409,12 @@ class AudioCoderApp(ctk.CTk):
                     sequence, error = data
                     if sequence == self.source_sequence and not self.busy:
                         self.status.configure(text="Waveform недоступен: " + error[:160])
+                elif kind == "play_error":
+                    generation, message = data
+                    if generation == self.player.generation:
+                        self._stop_playback()
+                        self.status.configure(text="Ошибка воспроизведения")
+                        messagebox.showerror("Воспроизведение", message)
                 elif kind == "progress":
                     self.progress.set(data)
                     self.status.configure(text=f"Конвертация: {data * 100:.1f}%")
@@ -337,10 +432,19 @@ class AudioCoderApp(ctk.CTk):
                     messagebox.showerror("Конвертация", data)
         except queue.Empty:
             pass
+        if self._playing:
+            position = self.player.position()
+            if position is None:
+                self._playing = False
+                self.waveform.set_playhead(None)
+                self.play_button.configure(text="▶ Воспроизвести")
+            elif self.info is not None:
+                self.waveform.set_playhead(position, self.info.duration)
         self.after(100, self._poll)
 
     def _close(self):
         self.closing = True
+        self._stop_playback()
         if self.runner:
             self.runner.cancel()
         self.destroy()

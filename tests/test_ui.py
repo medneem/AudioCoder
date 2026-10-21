@@ -24,6 +24,8 @@ class UITests(unittest.TestCase):
         cls.window._close()
 
     def test_slider_controls_and_time_labels(self):
+        self.window.info = None
+        self.window._refresh()
         self.assertEqual(self.window.run_button.cget("state"), "disabled")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "Альбом.flac"
@@ -62,7 +64,33 @@ class UITests(unittest.TestCase):
             self.assertIn("будет заменён", self.window.target_label.cget("text"))
             self.assertEqual(self.window.run_button.cget("state"), "normal")
 
+    def test_play_button_and_drag_previews(self):
+        from audiocoder.player import PlaybackWindow
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Песня.flac"
+            path.touch()
+            with patch("audiocoder.ui.save_settings"), patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(path, 120.0, "flac", 44100, 2))
+            self.window.slider.set([20, 80])
+            self.window.on_range(self.window.slider.get())
+            with patch.object(self.window.player, "play", return_value=1) as play, \
+                 patch.object(self.window.player, "stop") as stop:
+                self.window.toggle_play()
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
+                self.window.toggle_play()
+                stop.assert_called()
+                self.window._left_moved(20)
+                self.assertIsNotNone(self.window._preview_timer)
+                self.window._slider_released()
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
+                self.window._right_moved(80)
+                self.window._slider_released()
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(75, 80))
+            self.window._stop_playback()
+
     def test_mp3_bitrate_selector(self):
+        self.window.settings["target_format"] = "FLAC"
+        self.window._refresh()
         self.assertEqual(self.window.bitrate_menu.cget("state"), "disabled")
         with patch("audiocoder.ui.save_settings"):
             self.window.on_format("MP3")
