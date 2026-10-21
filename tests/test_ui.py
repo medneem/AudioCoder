@@ -70,6 +70,21 @@ class UITests(unittest.TestCase):
         self.assertEqual(self.window.main_heading.cget("font").cget("size"),
                          TITLE_SIZE)
 
+    def test_large_progress_backlog_does_not_block_gui_event_loop(self):
+        import queue
+        pending = queue.Queue()
+        for i in range(450):
+            pending.put(("progress", i / 450))
+        previous = self.window.events
+        try:
+            self.window.events = pending
+            self.window._poll()
+            self.assertGreater(pending.qsize(), 0,
+                               "One Tk callback consumed an unbounded event backlog")
+            self.assertLess(pending.qsize(), 450)
+        finally:
+            self.window.events = previous
+
     def test_waveform_accepts_explorer_audio_drop(self):
         from types import SimpleNamespace
         from tkinterdnd2 import COPY, REFUSE_DROP
