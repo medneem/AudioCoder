@@ -133,6 +133,7 @@ class AudioCoderApp(ctk.CTk):
         self.fade_menu.set(str(self.settings["fade_seconds"]))
         self.fade_menu.pack(side="left")
         self._update_fade_state()
+        self._sync_fade_overlay()
 
         destination = ctk.CTkFrame(frame, fg_color="transparent")
         destination.grid(row=10, column=0, sticky="ew", padx=18, pady=8)
@@ -222,6 +223,7 @@ class AudioCoderApp(ctk.CTk):
         self.slider.configure(to=info.duration, state="normal")
         self.slider.set([0.0, info.duration])
         self.on_range((0.0, info.duration))
+        self._sync_fade_overlay()
         self.status.configure(text="Построение звуковой волны…")
         self._preview()
         self._start_waveform(info)
@@ -268,11 +270,17 @@ class AudioCoderApp(ctk.CTk):
     def on_fade_changed(self):
         self.settings["fade_enabled"] = bool(self.fade_var.get())
         self._update_fade_state()
+        self._sync_fade_overlay()
         self._save()
 
     def on_fade_seconds(self, seconds):
         self.settings["fade_seconds"] = float(seconds)
+        self._sync_fade_overlay()
         self._save()
+
+    def _sync_fade_overlay(self):
+        duration = self.info.duration if self.info else 0.0
+        self.waveform.set_fade(self.settings["fade_enabled"], self.settings["fade_seconds"], duration)
 
     def _update_fade_state(self):
         self.fade_menu.configure(state="normal" if self.fade_var.get() else "disabled")

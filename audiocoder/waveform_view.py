@@ -4,6 +4,7 @@ Draw waveform pixels to one cached PhotoImage, not hundreds of Canvas items
 on each handle movement. The playhead remains a lightweight Canvas line.
 """
 import tkinter as tk
+import math
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
@@ -17,6 +18,8 @@ class WaveformView(tk.Canvas):
         self.peaks: tuple[float, ...] = ()
         self.selection: tuple[float, float] = (0.0, 1.0)
         self.playhead: float | None = None
+        self.fade_enabled = False
+        self.fade_fraction = 0.0
         self.viewport = WaveformViewport()
         self.on_edit = on_edit
         self.on_view_change = on_view_change
@@ -52,6 +55,11 @@ class WaveformView(tk.Canvas):
         if new != self.selection:
             self.selection = new
             self.redraw()
+
+    def set_fade(self, enabled: bool, seconds: float, duration: float):
+        self.fade_enabled = bool(enabled)
+        self.fade_fraction = max(0.0, seconds / duration) if duration > 0 else 0.0
+        self.redraw()
 
     def set_playhead(self, position: float | None, duration: float = 1.0):
         self.playhead = (None if position is None or duration <= 0 else
@@ -156,6 +164,30 @@ class WaveformView(tk.Canvas):
         for x in (x1, x2):
             if 0 <= x < w:
                 draw.line((x, 0, x, h), fill=active, width=1)
+        if self.fade_enabled and self.fade_fraction > 0:
+            # Red logarithmic envelope guides like the user's reference sketch.
+            # They are visual only; the same afade curve is applied at export.
+            length = max(0.0, self.selection[1] - self.selection[0])
+            fade_frac = min(self.fade_fraction, length / 2)
+            if fade_frac > 0:
+                top, bottom = 9, h - 9
+                fade_colour = "#E04444" if dark else "#D92D2D"
+                for begin, end, direction in (
+                    (self.selection[0], self.selection[0] + fade_frac, "in"),
+                    (self.selection[1] - fade_frac, self.selection[1], "out"),
+                ):
+                    points = []
+                    for x in range(w):
+                        position = self.viewport.position_at(x, w)
+                        if not begin <= position <= end:
+                            continue
+                        progress = (position - begin) / fade_frac
+                        if direction == "out":
+                            progress = 1 - progress
+                        gain = math.log1p(9 * progress) / math.log(10)
+                        points.append((x, int(bottom - gain * (bottom - top))))
+                    if len(points) >= 2:
+                        draw.line(points, fill=fade_colour, width=2)
         self._image = ImageTk.PhotoImage(image, master=self)
         self.itemconfigure(self._image_item, image=self._image)
         self._draw_playhead()

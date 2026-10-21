@@ -107,6 +107,7 @@ class UITests(unittest.TestCase):
         self.assertTrue(self.window.settings["fade_enabled"])
         self.assertEqual(self.window.settings["fade_seconds"], 2.0)
         self.assertEqual(self.window.fade_menu.cget("state"), "normal")
+        self.assertTrue(self.window.waveform.fade_enabled)
 
     def test_zoomed_waveform_edit_moves_slider_boundary(self):
         from types import SimpleNamespace
