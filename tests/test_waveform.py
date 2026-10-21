@@ -23,9 +23,9 @@ class WaveformTests(unittest.TestCase):
         cmd = waveform_command(Path("Музыка.flac"), Path("ffmpeg"), 1600, 120,
                                start=48.5, duration=12.25)
         self.assertEqual(cmd[cmd.index("-ss") + 1], "48.500000")
-        self.assertEqual(cmd[cmd.index("-t") + 1], "12.250000")
+        self.assertIn("atrim=duration=12.250000", cmd[cmd.index("-filter_complex") + 1])
+        self.assertNotIn("-t", cmd)
         self.assertLess(cmd.index("-ss"), cmd.index("-i"))
-        self.assertLess(cmd.index("-t"), cmd.index("-filter_complex"))
         self.assertIn("showwavespic=s=1600x120", " ".join(cmd))
 
     def test_invalid_detail_window_fails_fast(self):
