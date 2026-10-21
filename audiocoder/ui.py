@@ -45,6 +45,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.source_sequence = 0
         self.player = AudioPlayer()
         self._preview_timer = None
+        self._detail_timer = None
+        self._detail_generation = 0
         self._last_drag_side = None
         self._playing = False
         self._save_timer = None
@@ -345,6 +347,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if self.busy or self.probing:
             return
         self._stop_playback()
+        self._cancel_detail_waveform()
         self._save()
         self.info = None
         self.source_sequence += 1
@@ -405,6 +408,47 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 self.events.put(("waveform_error", (sequence, str(exc))))
         threading.Thread(target=worker, daemon=True).start()
 
+    def _cancel_detail_waveform(self):
+        self._detail_generation += 1
+        if self._detail_timer is not None:
+            self.after_cancel(self._detail_timer)
+            self._detail_timer = None
+
+    def _schedule_detail_waveform(self):
+        """Coalesce wheel/drag events so zooming never blocks the Tk UI."""
+        self._cancel_detail_waveform()
+        if (self.info is None or not self.waveform.peaks
+                or self.waveform.viewport.zoom_level < 1.10):
+            return
+        self._detail_timer = self.after(280, self._start_detail_waveform)
+
+    def _start_detail_waveform(self):
+        self._detail_timer = None
+        if self.closing or self.info is None or not self.waveform.peaks:
+            return
+        info = self.info
+        viewport = self.waveform.viewport
+        start, end = viewport.start, viewport.end
+        duration = (end - start) * info.duration
+        if duration <= 0.05:
+            return
+        sequence = self.source_sequence
+        generation = self._detail_generation
+        width = max(1024, min(4096, self.waveform.winfo_width() * 2))
+
+        def worker():
+            try:
+                peaks = extract_waveform(
+                    info.path, width=width, height=120, timeout=90,
+                    start=start * info.duration, duration=duration)
+                self.events.put((
+                    "waveform_detail", (sequence, generation, start, end, peaks)))
+            except (OSError, ValueError):
+                # Keep rendering the full-track overview when detail decoding
+                # cannot be performed; do not interrupt editing or playback.
+                pass
+        threading.Thread(target=worker, daemon=True).start()
+
     def on_range(self, values):
         if self.info is None:
             return
@@ -422,6 +466,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _on_waveform_view(self, zoom):
         self.zoom_label.configure(text=f"×{zoom:.1f}")
         self._record_view()
+        self._schedule_detail_waveform()
 
     def _waveform_edit(self, side, position, finished):
         if self.info is None or self.probing or self.busy:
@@ -684,8 +729,15 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                     sequence, peaks = data
                     if sequence == self.source_sequence and self.info is not None:
                         self.waveform.set_peaks(peaks)
+                        self._schedule_detail_waveform()
                         if not self.busy:
                             self.status.configure(text="Аудиофайл загружен")
+                elif kind == "waveform_detail":
+                    sequence, generation, start, end, peaks = data
+                    if (sequence == self.source_sequence
+                            and generation == self._detail_generation
+                            and self.info is not None):
+                        self.waveform.set_detail_peaks(start, end, peaks)
                 elif kind == "waveform_error":
                     sequence, error = data
                     if sequence == self.source_sequence and not self.busy:
@@ -725,6 +777,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
     def _close(self):
         self.closing = True
+        self._cancel_detail_waveform()
         self._stop_playback()
         if self.runner:
             self.runner.cancel()

@@ -3,10 +3,29 @@ import unittest
 
 from PIL import Image
 
-from audiocoder.waveform_view import round_waveform_image, _rounded_mask
+from audiocoder.waveform_view import round_waveform_image, _rounded_mask, visible_waveform_columns
 
 
 class RoundedWaveformTests(unittest.TestCase):
+    def test_zoom_wave_reuses_full_width_using_fresh_detail_points(self):
+        from audiocoder.waveform_navigation import WaveformViewport
+        view = WaveformViewport(start=.25, span=.25)
+        overview = (0.0,) * 1024
+        details = tuple((i + 1) / 1200 for i in range(1200))
+        width = 600
+        # Without detail data, zoom remains instant using the overview.
+        self.assertEqual(visible_waveform_columns(overview, view, width)[250], 0)
+        columns = visible_waveform_columns(
+            overview, view, width,
+            detail=(.25, .50, details))
+        self.assertEqual(len(columns), width)
+        self.assertLess(columns[0], .01)
+        self.assertGreater(columns[-1], .99)
+        # A shifted viewport must not display previously decoded detail.
+        view.pan(-120, width)
+        self.assertEqual(visible_waveform_columns(
+            overview, view, width, detail=(.25, .50, details))[250], 0)
+
     def test_corners_take_parent_color_and_center_remains_waveform(self):
         source = Image.new("RGB", (160, 90), "#1974C9")
         result = round_waveform_image(source, "#DBDBDB", radius=14)

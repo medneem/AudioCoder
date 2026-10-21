@@ -4,19 +4,33 @@ Only one monochrome video frame (width * height bytes) is transferred to Python,
 not a decoded copy of the entire audio file.
 """
 from pathlib import Path
+import math
 import subprocess
 
 from .media import find_binary
 
 
-def waveform_command(path: Path, ffmpeg: Path, width: int, height: int) -> list[str]:
+def waveform_command(path: Path, ffmpeg: Path, width: int, height: int,
+                     *, start: float = 0.0, duration: float | None = None) -> list[str]:
     if not (32 <= width <= 4096 and 32 <= height <= 512):
         raise ValueError("Неподдерживаемые размеры waveform.")
-    filtergraph = (f"[0:a:0]aformat=channel_layouts=mono,"
+    if not math.isfinite(start) or start < 0:
+        raise ValueError("Некорректная начальная позиция waveform.")
+    if duration is not None and (not math.isfinite(duration) or duration <= 0):
+        raise ValueError("Некорректная длительность waveform.")
+    # showwavespic buffers the entire input before emitting a single frame.
+    # Output -t does NOT bound audio entering the filter; atrim does.
+    source = "[0:a:0]"
+    if duration is not None:
+        source += f"atrim=duration={duration:.6f},asetpts=PTS-STARTPTS,"
+    filtergraph = (f"{source}aformat=channel_layouts=mono,"
                    f"showwavespic=s={width}x{height}:colors=white:scale=lin:draw=full[v]")
-    return [
-        str(ffmpeg), "-hide_banner", "-nostdin", "-v", "error",
-        "-i", str(path), "-filter_complex", filtergraph,
+    command = [str(ffmpeg), "-hide_banner", "-nostdin", "-v", "error"]
+    if start:
+        command += ["-ss", f"{start:.6f}"]
+    command += ["-i", str(path)]
+    return command + [
+        "-filter_complex", filtergraph,
         "-map", "[v]", "-frames:v", "1", "-f", "rawvideo",
         "-pix_fmt", "gray", "pipe:1",
     ]
@@ -39,12 +53,14 @@ def peak_columns(raw: bytes, width: int, height: int) -> tuple[float, ...]:
 
 def extract_waveform(path: Path, ffmpeg: Path | None = None,
                      *, width: int = 4096, height: int = 120,
-                     timeout: int = 180) -> tuple[float, ...]:
+                     timeout: int = 180, start: float = 0.0,
+                     duration: float | None = None) -> tuple[float, ...]:
     """Decode the first audio stream into one waveform preview in a worker thread."""
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"Не найден аудиофайл: {path}")
-    cmd = waveform_command(path, ffmpeg or find_binary("ffmpeg"), width, height)
+    cmd = waveform_command(path, ffmpeg or find_binary("ffmpeg"), width, height,
+                           start=start, duration=duration)
     try:
         completed = subprocess.run(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
