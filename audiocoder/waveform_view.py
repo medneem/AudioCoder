@@ -4,11 +4,33 @@ Draw waveform pixels to one cached PhotoImage, not hundreds of Canvas items
 on each handle movement. The playhead remains a lightweight Canvas line.
 """
 import tkinter as tk
+from functools import lru_cache
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 from .waveform_navigation import WaveformViewport, clamp
 from .fade import fade_gain
+
+
+
+@lru_cache(maxsize=12)
+def _rounded_mask(width: int, height: int, radius: int) -> Image.Image:
+    """Cache an antialiased clipping mask while dragging markers."""
+    radius = max(0, min(radius, width // 2, height // 2))
+    scale = 3
+    mask = Image.new("L", (width * scale, height * scale), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, width * scale - 1, height * scale - 1),
+        radius=radius * scale, fill=255)
+    return mask.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def round_waveform_image(image: Image.Image, surrounding_color: str,
+                         radius: int = 14) -> Image.Image:
+    """Make real rounded bitmap corners, matching the surrounding CTk card."""
+    outer = Image.new("RGB", image.size, surrounding_color)
+    outer.paste(image, (0, 0), _rounded_mask(*image.size, radius))
+    return outer
 
 
 class WaveformView(tk.Canvas):
@@ -18,6 +40,7 @@ class WaveformView(tk.Canvas):
         self.peaks: tuple[float, ...] = ()
         self.selection: tuple[float, float] = (0.0, 1.0)
         self.playhead: float | None = None
+        self.corner_radius = 14
         self.fade_enabled = False
         self.fade_fraction = 0.0
         self.fade_in_curve = "log"
@@ -78,7 +101,9 @@ class WaveformView(tk.Canvas):
             return
         x = self.viewport.x_at(self.playhead, w)
         dark = ctk.get_appearance_mode() == "Dark"
-        self.coords(self._playhead_item, x, 0, x, h)
+        # An overlay line should not cut through the rounded image corners.
+        edge = self.corner_radius if x < self.corner_radius or x > w - self.corner_radius else 0
+        self.coords(self._playhead_item, x, edge, x, h - edge)
         self.itemconfigure(self._playhead_item, state="normal",
                            fill="#E95757" if dark else "#CF2535")
         self.tag_raise(self._playhead_item)
@@ -146,7 +171,11 @@ class WaveformView(tk.Canvas):
         selected_bg = "#243B55" if dark else "#DCEBFB"
         inactive = "#7A889A" if dark else "#A7B4C4"
         active = "#53B5FF" if dark else "#1874C9"
-        self.configure(background=background)
+        # The raw Tk canvas stays rectangular. Blend the four outer corners
+        # into the CTkFrame behind it, while retaining normal TkDND bindings.
+        surrounding = self.master._apply_appearance_mode(
+            self.master.cget("fg_color"))
+        self.configure(background=surrounding)
         image = Image.new("RGB", (w, h), background)
         draw = ImageDraw.Draw(image)
         x1 = int(self.viewport.x_at(self.selection[0], w))
@@ -195,6 +224,7 @@ class WaveformView(tk.Canvas):
                         points.append((x, int(bottom - gain * (bottom - top))))
                     if len(points) >= 2:
                         draw.line(points, fill=fade_colour, width=2)
+        image = round_waveform_image(image, surrounding, self.corner_radius)
         self._image = ImageTk.PhotoImage(image, master=self)
         self.itemconfigure(self._image_item, image=self._image)
         self._draw_playhead()
