@@ -40,15 +40,19 @@ def peak_columns(raw: bytes, width: int, height: int) -> tuple[float, ...]:
     """Extract normalised amplitude per column from FFmpeg's raw gray waveform."""
     if len(raw) != width * height:
         raise ValueError("FFmpeg вернул неполную звуковую волну.")
+    # Scan contiguous image rows instead of jumping width bytes between
+    # pixels. This avoids 4096 independent strided scans on a large overview
+    # and reduces Python arithmetic inside the innermost loop.
     middle = height / 2
-    result = []
-    for x in range(width):
-        extent = 0.0
-        for y in range(height):
-            if raw[y * width + x] > 127:
-                extent = max(extent, abs((y + 0.5) - middle))
-        result.append(max(0.0, min(1.0, extent / middle)))
-    return tuple(result)
+    peaks = [0.0] * width
+    pixels = memoryview(raw)
+    for y in range(height):
+        extent = abs((y + 0.5) - middle) / middle
+        row = pixels[y * width:(y + 1) * width]
+        for x, intensity in enumerate(row):
+            if intensity > 127 and extent > peaks[x]:
+                peaks[x] = extent
+    return tuple(min(1.0, peak) for peak in peaks)
 
 
 def extract_waveform(path: Path, ffmpeg: Path | None = None,
