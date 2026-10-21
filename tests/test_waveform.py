@@ -42,6 +42,18 @@ class WaveformTests(unittest.TestCase):
         self.assertAlmostEqual(peaks[0], 0.75)
         self.assertEqual(peaks[1], 0.0)
 
+    def test_peak_columns_matches_reference_for_rectangular_image(self):
+        width, height = 113, 45
+        raw = bytes((x * 37 + y * 19) % 256
+                    for y in range(height) for x in range(width))
+        expected = []
+        for x in range(width):
+            distances = [abs(y + .5 - height / 2) / (height / 2)
+                         for y in range(height)
+                         if raw[y * width + x] > 127]
+            expected.append(max(distances, default=0.0))
+        self.assertEqual(peak_columns(raw, width, height), tuple(expected))
+
     def test_incomplete_frame(self):
         with self.assertRaises(ValueError):
             peak_columns(b"\x00", 960, 120)
