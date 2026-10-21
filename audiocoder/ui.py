@@ -15,6 +15,7 @@ from .converter import (BITRATES, FORMATS, ConversionCancelled,
 from .media import probe_audio
 from .player import AudioPlayer, listening_window
 from .waveform import extract_waveform
+from .waveform_jobs import LatestOnlyWorker, WaveformDetailRequest
 from .waveform_view import WaveformView
 from .fade import FADE_CURVES
 from .fade_help import FadeHelpWindow
@@ -57,6 +58,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._preview_timer = None
         self._detail_timer = None
         self._detail_generation = 0
+        self._detail_worker = LatestOnlyWorker(
+            self._decode_detail_waveform, self._detail_completed,
+            self._detail_failed)
         self._last_drag_side = None
         self._playing = False
         self._save_timer = None
@@ -421,6 +425,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
     def _cancel_detail_waveform(self):
         self._detail_generation += 1
+        self._detail_worker.clear()
         if self._detail_timer is not None:
             self.after_cancel(self._detail_timer)
             self._detail_timer = None
@@ -443,22 +448,28 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         duration = (end - start) * info.duration
         if duration <= 0.05:
             return
-        sequence = self.source_sequence
-        generation = self._detail_generation
-        width = max(1024, min(4096, self.waveform.winfo_width() * 2))
+        request = WaveformDetailRequest(
+            path=info.path, audio_duration=info.duration, start=start, end=end,
+            width=max(1024, min(4096, self.waveform.winfo_width() * 2)),
+            sequence=self.source_sequence, generation=self._detail_generation)
+        self._detail_worker.submit(request)
 
-        def worker():
-            try:
-                peaks = extract_waveform(
-                    info.path, width=width, height=120, timeout=90,
-                    start=start * info.duration, duration=duration)
-                self.events.put((
-                    "waveform_detail", (sequence, generation, start, end, peaks)))
-            except (OSError, ValueError):
-                # Keep rendering the full-track overview when detail decoding
-                # cannot be performed; do not interrupt editing or playback.
-                pass
-        threading.Thread(target=worker, daemon=True).start()
+    @staticmethod
+    def _decode_detail_waveform(request: WaveformDetailRequest):
+        return extract_waveform(
+            request.path, width=request.width, height=120, timeout=90,
+            start=request.start * request.audio_duration,
+            duration=(request.end - request.start) * request.audio_duration)
+
+    def _detail_completed(self, request: WaveformDetailRequest, peaks):
+        # Background thread: communicate only via the Tk event queue.
+        self.events.put(("waveform_detail", (
+            request.sequence, request.generation,
+            request.start, request.end, peaks)))
+
+    def _detail_failed(self, request: WaveformDetailRequest, error: Exception):
+        self.events.put(("waveform_detail_error", (
+            request.sequence, request.generation, str(error))))
 
     def on_range(self, values):
         if self.info is None:
@@ -760,6 +771,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                             and generation == self._detail_generation
                             and self.info is not None):
                         self.waveform.set_detail_peaks(start, end, peaks)
+                elif kind == "waveform_detail_error":
+                    sequence, generation, error = data
+                    if (sequence == self.source_sequence
+                            and generation == self._detail_generation
+                            and not self.busy):
+                        self.status.configure(text="Детализация waveform: " + error[:140])
                 elif kind == "waveform_error":
                     sequence, error = data
                     if sequence == self.source_sequence and not self.busy:
@@ -800,6 +817,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _close(self):
         self.closing = True
         self._cancel_detail_waveform()
+        self._detail_worker.close()
         self._stop_playback()
         if self.runner:
             self.runner.cancel()
