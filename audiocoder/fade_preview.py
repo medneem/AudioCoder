@@ -8,6 +8,8 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from .fade import FADE_CURVES, fade_gain
+from .palette import (FADE_CHART_BACKGROUND, FADE_CHART_TEXT, FADE_CHART_GRID,
+                      FADE_CHART_AXIS, FADE_CHART_LINE, theme_color)
 
 
 def _font(size: int):
@@ -29,11 +31,11 @@ def draw_fade_diagrams(curve_in: str, curve_out: str,
     # Supersampling ensures smooth bezier-like plots even on narrow screens.
     scale = 3
     W, H = width * scale, height * scale
-    bg = "#222C3D" if dark else "#FFFFFF"
-    text = "#EDF2F9" if dark else "#334155"
-    grid = "#465166" if dark else "#D9E2EC"
-    axis = "#A3B2C6" if dark else "#52657C"
-    blue = "#63ACFF" if dark else "#096CDD"
+    bg = theme_color(FADE_CHART_BACKGROUND, dark=dark)
+    text = theme_color(FADE_CHART_TEXT, dark=dark)
+    grid = theme_color(FADE_CHART_GRID, dark=dark)
+    axis = theme_color(FADE_CHART_AXIS, dark=dark)
+    line = theme_color(FADE_CHART_LINE, dark=dark)
     image = Image.new("RGB", (W, H), bg)
     d = ImageDraw.Draw(image)
     font = _font(11 * scale)
@@ -74,7 +76,7 @@ def draw_fade_diagrams(curve_in: str, curve_out: str,
                 gain = 1.0 if t < .8 else fade_gain(code, (1.0 - t) / .2)
             points.append((int(left + t * (right - left)),
                            int(bottom - gain * (bottom - top))))
-        d.line(points, fill=blue, width=3 * scale, joint="curve")
+        d.line(points, fill=line, width=3 * scale, joint="curve")
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 
@@ -99,4 +101,4 @@ class FadePreview(tk.Canvas):
         image = draw_fade_diagrams(*self._curves, width=width, height=height, dark=dark)
         self._image = ImageTk.PhotoImage(image, master=self)
         self.itemconfigure(self._item, image=self._image)
-        self.configure(bg="#222C3D" if dark else "#FFFFFF")
+        self.configure(bg=theme_color(FADE_CHART_BACKGROUND, dark=dark))
