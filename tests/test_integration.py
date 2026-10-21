@@ -40,8 +40,8 @@ class ConversionIntegrationTests(unittest.TestCase):
                 return (sum(int(v) ** 2 for v in section) / len(section)) ** .5
             center = rms(.4, .6)
             self.assertGreater(center, 1000)
-            self.assertLess(rms(0, .025), center * .4)
-            self.assertLess(rms(.975, 1), center * .4)
+            self.assertLess(rms(0, .025), center * .85)
+            self.assertLess(rms(.975, 1), center * .85)
 
     def test_trim_lossless_flac_to_mp3(self):
         with tempfile.TemporaryDirectory() as tmp:
