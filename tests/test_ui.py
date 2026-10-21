@@ -368,6 +368,41 @@ class UITests(unittest.TestCase):
             self.assertGreaterEqual(captured[0][1]["width"], 1024)
             self.window._cancel_detail_waveform()
 
+    def test_wheel_zoom_displays_actual_visible_time_range(self):
+        from types import SimpleNamespace
+        previous_info = self.window.info
+        previous_view = (self.window.waveform.viewport.start,
+                         self.window.waveform.viewport.span)
+        try:
+            self.window.info = AudioInfo(
+                Path("song.flac"), 285.327, "flac", 44100, 2)
+            self.window.waveform.viewport.reset()
+            with patch.object(self.window, "_record_view"), \
+                 patch.object(self.window, "_schedule_detail_waveform"):
+                self.window._on_waveform_view(1)
+                self.assertIn("×1.0", self.window.zoom_label.cget("text"))
+                self.assertIn("00:00", self.window.zoom_label.cget("text"))
+                self.assertIn("04:45", self.window.zoom_label.cget("text"))
+                self.window.waveform._wheel(
+                    SimpleNamespace(delta=120, x=400))
+                self.assertLess(self.window.waveform.viewport.span, 1)
+                self.assertIn("×1.4", self.window.zoom_label.cget("text"))
+                self.window.waveform.viewport.zoom(50, .5)
+                self.window._on_waveform_view(
+                    self.window.waveform.viewport.zoom_level)
+                text = self.window.zoom_label.cget("text")
+                self.assertIn("×16.0", text)
+                self.assertNotIn("00:00–04:45", text)
+                # Window is only 285.327 / 16 seconds long.
+                self.assertAlmostEqual(
+                    (self.window.waveform.viewport.end -
+                     self.window.waveform.viewport.start) * self.window.info.duration,
+                    285.327 / 16, places=4)
+        finally:
+            self.window.info = previous_info
+            self.window.waveform.viewport.start = previous_view[0]
+            self.window.waveform.viewport.span = previous_view[1]
+
     def test_zoomed_waveform_edit_moves_slider_boundary(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as tmp:

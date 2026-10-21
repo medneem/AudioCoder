@@ -3,7 +3,7 @@ import unittest
 
 from PIL import Image
 
-from audiocoder.waveform_view import round_waveform_image, _rounded_mask, visible_waveform_columns
+from audiocoder.waveform_view import round_waveform_image, _rounded_mask, visible_waveform_columns, level_waveform_columns
 
 
 class RoundedWaveformTests(unittest.TestCase):
@@ -25,6 +25,30 @@ class RoundedWaveformTests(unittest.TestCase):
         view.pan(-120, width)
         self.assertEqual(visible_waveform_columns(
             overview, view, width, detail=(.25, .50, details))[250], 0)
+
+    def test_zoomed_view_is_a_time_crop_not_the_full_recording(self):
+        from audiocoder.waveform_navigation import WaveformViewport
+        # Four equal parts of a song have very different amplitudes.
+        peaks = (.04,) * 512 + (.50,) * 512 + (.12,) * 512 + (.95,) * 512
+        viewport = WaveformViewport()
+        entire = visible_waveform_columns(peaks, viewport, 320)
+        self.assertGreater(max(entire), .9)
+        viewport.zoom(16, .1)
+        cropped = visible_waveform_columns(peaks, viewport, 320)
+        self.assertEqual(len(cropped), 320)
+        self.assertAlmostEqual(max(cropped), .04)
+        self.assertNotEqual(cropped, entire)
+
+    def test_auto_level_amplifies_quiet_visible_wave_not_audio(self):
+        columns = (0.0, .02, .05, .10, .20, .10, .05, 0.0)
+        result = level_waveform_columns(columns)
+        self.assertEqual(result[0], 0.0)
+        self.assertEqual(result[-1], 0.0)
+        self.assertGreater(result[4], .85)
+        self.assertLessEqual(max(result), 1)
+        self.assertEqual(level_waveform_columns((0.0,) * 50), (0.0,) * 50)
+        # Very low-level noise must not be exaggerated to full canvas height.
+        self.assertLess(max(level_waveform_columns((.0001,) * 50)), .01)
 
     def test_corners_take_parent_color_and_center_remains_waveform(self):
         source = Image.new("RGB", (160, 90), "#1974C9")
