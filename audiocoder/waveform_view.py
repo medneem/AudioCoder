@@ -25,7 +25,17 @@ def _rounded_mask(width: int, height: int, radius: int) -> Image.Image:
     return mask.resize((width, height), Image.Resampling.LANCZOS)
 
 
-def round_waveform_image(image: Image.Image, surrounding_color: str,
+def tk_background_rgb(widget: tk.Misc, color: str) -> tuple[int, int, int]:
+    """Convert Tk's platform color names (e.g. gray86) for Pillow.
+
+    CustomTkinter defaults on Windows can be named Tk colors rather than HEX.
+    Tk accepts 'gray86', but PIL.Image.new raises ValueError for that name.
+    Always resolve through the running Tk interpreter before compositing.
+    """
+    return tuple(round(channel / 257) for channel in widget.winfo_rgb(color))
+
+
+def round_waveform_image(image: Image.Image, surrounding_color: str | tuple[int, int, int],
                          radius: int = 14) -> Image.Image:
     """Make real rounded bitmap corners, matching the surrounding CTk card."""
     outer = Image.new("RGB", image.size, surrounding_color)
@@ -263,7 +273,8 @@ class WaveformView(tk.Canvas):
                         points.append((x, int(bottom - gain * (bottom - top))))
                     if len(points) >= 2:
                         draw.line(points, fill=fade_colour, width=2)
-        image = round_waveform_image(image, surrounding, self.corner_radius)
+        image = round_waveform_image(
+            image, tk_background_rgb(self, surrounding), self.corner_radius)
         self._image = ImageTk.PhotoImage(image, master=self)
         self.itemconfigure(self._image_item, image=self._image)
         self._draw_playhead()

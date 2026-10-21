@@ -77,6 +77,24 @@ class WaveformTests(unittest.TestCase):
             self.assertGreater(max(tone), .05)
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
+    def test_real_high_sample_rate_flac_overview_and_zoom(self):
+        """Regression input: 192 kHz stereo FLAC plus an amplified zoom view."""
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "Тест 192кГц.flac"
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=192000:duration=2.4",
+                "-ac", "2", "-c:a", "flac", "-y", str(source),
+            ], capture_output=True, check=True)
+            overview = extract_waveform(source, width=4096, height=120)
+            detailed = extract_waveform(
+                source, width=1600, height=120, start=.5, duration=.6)
+            self.assertEqual(len(overview), 4096)
+            self.assertEqual(len(detailed), 1600)
+            self.assertGreater(max(overview), .05)
+            self.assertGreater(max(detailed), .05)
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
     def test_real_waveform_for_tone(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "Тон.wav"

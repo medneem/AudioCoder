@@ -253,6 +253,56 @@ class UITests(unittest.TestCase):
         self.assertEqual(self.window.fade_menu.cget("state"), "normal")
         self.assertTrue(self.window.waveform.fade_enabled)
 
+    def test_real_canvas_paints_with_tk_named_gray86_background(self):
+        """Regression: Windows CTkFrame theme returns 'gray86', invalid for PIL."""
+        previous_view = (self.window.waveform.viewport.start,
+                         self.window.waveform.viewport.span)
+        self.window.deiconify()
+        try:
+            self.window.update_idletasks()
+            self.window.waveform.set_peaks((0.3,) * 4096)
+            self.window.waveform.viewport.reset()
+            self.window.waveform.viewport.zoom(3.8, .5)
+            self.window.waveform.set_selection(0, 143.901, 143.901)
+            from audiocoder.waveform_view import tk_background_rgb
+            for color, expected in (("gray86", (219, 219, 219)),
+                                    ("gray13", (33, 33, 33)),
+                                    ("#DBDBDB", (219, 219, 219))):
+                with self.subTest(color=color):
+                    self.assertEqual(
+                        tk_background_rgb(self.window.waveform, color), expected)
+                    with patch.object(self.window.editor_panel, "_apply_appearance_mode",
+                                      return_value=color):
+                        self.window.waveform._paint()
+                    self.assertIsNotNone(self.window.waveform._image)
+                    self.assertTrue(self.window.waveform.itemcget(
+                        self.window.waveform._image_item, "image"))
+        finally:
+            (self.window.waveform.viewport.start,
+             self.window.waveform.viewport.span) = previous_view
+            self.window.withdraw()
+
+    def test_canvas_idle_callback_does_not_fail_silently(self):
+        """Tkinter callback exceptions used to be printed but not fail CI."""
+        errors = []
+        previous_view = (self.window.waveform.viewport.start,
+                         self.window.waveform.viewport.span)
+        self.window.deiconify()
+        try:
+            self.window.waveform.set_peaks((.35,) * 4096)
+            self.window.waveform.viewport.reset()
+            self.window.waveform.viewport.zoom(3.8, .5)
+            with patch.object(self.window, "report_callback_exception",
+                              side_effect=lambda typ, err, tb: errors.append(str(err))):
+                self.window.waveform.redraw()
+                self.window.update()
+            self.assertEqual(errors, [], "Canvas callback failed: " + repr(errors))
+            self.assertIsNotNone(self.window.waveform._image)
+        finally:
+            (self.window.waveform.viewport.start,
+             self.window.waveform.viewport.span) = previous_view
+            self.window.withdraw()
+
     def test_zoom_detail_updates_width_and_ignores_stale_results(self):
         from audiocoder.waveform_view import visible_waveform_columns
         with tempfile.TemporaryDirectory() as tmp:
