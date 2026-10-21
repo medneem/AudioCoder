@@ -300,6 +300,7 @@ class UITests(unittest.TestCase):
             with patch("audiocoder.ui.save_settings"), patch.object(self.window, "_start_waveform"):
                 self.window._loaded(AudioInfo(file, 120.0, "flac", 44100, 2))
             self.window.waveform.set_peaks((0.2,) * 4096)
+            self.window.waveform.reset_view()
             self.window.waveform.viewport.zoom(4, .5)
             self.window._on_waveform_view(4.0)
             captured = []
