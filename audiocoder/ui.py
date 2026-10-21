@@ -6,6 +6,7 @@ import queue
 import threading
 
 import customtkinter as ctk
+from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from vendor.CTkRangeSlider import CTkRangeSlider
 
 from version import APP_VERSION
@@ -17,6 +18,8 @@ from .waveform import extract_waveform
 from .waveform_view import WaveformView
 from .fade import FADE_CURVES
 from .fade_help import FadeHelpWindow
+from .drag_drop import dropped_audio_path
+from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
 from .selection import ClipRange, clock
 from .settings import DEFAULTS, load_settings, save_settings
 
@@ -25,9 +28,10 @@ ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 
-class AudioCoderApp(ctk.CTk):
+class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def __init__(self):
         super().__init__()
+        self.TkdndVersion = TkinterDnD._require(self)
         self.title(f"AudioCoder {APP_VERSION}")
         self.geometry("920x710")
         self.minsize(810, 650)
@@ -57,7 +61,9 @@ class AudioCoderApp(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
-        ctk.CTkLabel(header, text="AudioCoder", font=ctk.CTkFont(size=26, weight="bold")).pack(side="left")
+        self.main_heading = ctk.CTkLabel(header, text="AudioCoder",
+                                         font=ctk.CTkFont(family=FONT_FAMILY, size=TITLE_SIZE, weight="bold"))
+        self.main_heading.pack(side="left")
         ctk.CTkLabel(header, text=f"v{APP_VERSION}", text_color="gray").pack(side="right")
         self.appearance_menu = ctk.CTkOptionMenu(
             header, values=["Светлая", "Тёмная", "Системная"], width=125,
@@ -79,7 +85,7 @@ class AudioCoderApp(ctk.CTk):
         frame = self.editor_panel
         frame.grid(row=1, column=0, sticky="nsew", padx=22, pady=8)
         frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(frame, text="Исходный аудиофайл", font=ctk.CTkFont(size=15, weight="bold")).grid(
+        ctk.CTkLabel(frame, text="🎵 Исходный аудиофайл · перетащите файл на волну").grid(
             row=0, column=0, sticky="w", padx=18, pady=(16, 5))
         self.path_label = ctk.CTkLabel(frame, text="Файл не выбран", anchor="w")
         self.path_label.grid(row=1, column=0, sticky="ew", padx=18)
@@ -101,6 +107,10 @@ class AudioCoderApp(ctk.CTk):
             frame, height=140, on_edit=self._waveform_edit,
             on_view_change=self._on_waveform_view)
         self.waveform.grid(row=5, column=0, sticky="ew", padx=24, pady=(5, 4))
+        self.waveform.drop_target_register(DND_FILES)
+        self.waveform.dnd_bind("<<DropEnter>>", self._drop_enter)
+        self.waveform.dnd_bind("<<DropLeave>>", self._drop_leave)
+        self.waveform.dnd_bind("<<Drop>>", self._on_wave_drop)
         self.slider = CTkRangeSlider(
             frame, from_=0, to=1, height=20, state="disabled",
             command=(self._left_moved, self._right_moved))
@@ -108,87 +118,117 @@ class AudioCoderApp(ctk.CTk):
         # The vendored range slider handles mouse events on its inner Canvas.
         # Keep its internal drag handlers; add only a release notification.
         self.slider._canvas.bind("<ButtonRelease-1>", self._slider_released, add="+")
-        zoom_row = ctk.CTkFrame(frame, fg_color="transparent")
-        zoom_row.grid(row=7, column=0, sticky="ew", padx=24, pady=(0, 5))
+        # Approved mockup variant 3: compact quality rows, highlighted fade
+        # card, and a distinct folder strip. Keep all controls scrollable.
+        zoom_row = ctk.CTkFrame(frame, fg_color=("#F7F9FD", "#293544"),
+                                corner_radius=12)
+        zoom_row.grid(row=7, column=0, sticky="ew", padx=18, pady=(3, 9))
         zoom_row.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            zoom_row, text="Колесо — масштаб • Правая кнопка — сдвиг • Левая — границы",
-            font=ctk.CTkFont(size=11)
-        ).grid(row=0, column=0, sticky="w")
-        self.zoom_label = ctk.CTkLabel(zoom_row, text="×1.0", width=50)
-        self.zoom_label.grid(row=0, column=1, padx=(5, 8))
-        ctk.CTkButton(zoom_row, text="Сброс", width=65,
-                      command=self.waveform.reset_view).grid(row=0, column=2)
+            zoom_row, text="◈  Колесо — масштаб · Правая кнопка — сдвиг · Левая — границы",
+            anchor="w").grid(row=0, column=0, sticky="ew", padx=(12, 5), pady=8)
+        self.zoom_label = ctk.CTkLabel(zoom_row, text="×1.0", width=54)
+        self.zoom_label.grid(row=0, column=1, padx=8)
+        ctk.CTkButton(
+            zoom_row, text="↻ Сброс", width=86, height=32,
+            command=self.waveform.reset_view
+        ).grid(row=0, column=2, padx=(2, 10), pady=6)
 
-        options = ctk.CTkFrame(frame, fg_color="transparent")
-        options.grid(row=8, column=0, sticky="w", padx=18, pady=6)
-        ctk.CTkLabel(options, text="Формат").pack(side="left", padx=(0, 8))
+        self.codec_card = ctk.CTkFrame(
+            frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
+            border_width=1, border_color=("#E3E8F0", "#405065"))
+        self.codec_card.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 9))
+        codec_row = ctk.CTkFrame(self.codec_card, fg_color="transparent")
+        codec_row.pack(fill="x", padx=14, pady=(14, 9))
+        ctk.CTkLabel(codec_row, text="♫", width=28).pack(side="left")
+        ctk.CTkLabel(codec_row, text="Формат").pack(side="left", padx=(4, 8))
         self.format_menu = ctk.CTkOptionMenu(
-            options, values=list(FORMATS), width=115, command=self.on_format)
+            codec_row, values=list(FORMATS), width=112, command=self.on_format)
         self.format_menu.set(self.settings["target_format"])
-        self.format_menu.pack(side="left", padx=(0, 24))
-        ctk.CTkLabel(options, text="MP3 битрейт").pack(side="left", padx=(0, 8))
+        self.format_menu.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(codec_row, text="Битрейт").pack(side="left", padx=(0, 8))
         self.bitrate_menu = ctk.CTkOptionMenu(
-            options, values=list(BITRATES), width=110, command=self.on_bitrate)
+            codec_row, values=list(BITRATES), width=105, command=self.on_bitrate)
         self.bitrate_menu.set(self.settings["bitrate"])
-        self.bitrate_menu.pack(side="left", padx=(0, 18))
+        self.bitrate_menu.pack(side="left", padx=(0, 19))
         self.vbr_var = ctk.BooleanVar(value=self.settings["vbr_enabled"])
         self.vbr_checkbox = ctk.CTkCheckBox(
-            options, text="VBR", variable=self.vbr_var, width=75,
+            codec_row, text="VBR", variable=self.vbr_var, width=75,
             command=self.on_vbr_changed)
         self.vbr_checkbox.pack(side="left")
 
-        quality_row = ctk.CTkFrame(frame, fg_color="transparent")
-        quality_row.grid(row=9, column=0, sticky="w", padx=18, pady=(2, 6))
-        ctk.CTkLabel(quality_row, text="Качество MP3 VBR (0 — лучшее):").pack(
-            side="left", padx=(0, 9))
+        quality_row = ctk.CTkFrame(self.codec_card, fg_color="transparent")
+        quality_row.pack(fill="x", padx=14, pady=(0, 13))
+        ctk.CTkLabel(quality_row, text="▥", width=28).pack(side="left")
+        ctk.CTkLabel(
+            quality_row, text="Качество MP3 VBR (0 — лучшее)"
+        ).pack(side="left", padx=(4, 10))
         self.vbr_quality_menu = ctk.CTkOptionMenu(
-            quality_row, values=[str(n) for n in range(10)], width=75,
+            quality_row, values=[str(n) for n in range(10)], width=72,
             command=self.on_vbr_quality)
         self.vbr_quality_menu.set(str(self.settings["vbr_quality"]))
         self.vbr_quality_menu.pack(side="left")
         self._update_audio_options()
 
-        fades = ctk.CTkFrame(frame, fg_color="transparent")
-        fades.grid(row=10, column=0, sticky="w", padx=18, pady=(5, 7))
+        self.fade_card = ctk.CTkFrame(
+            frame, fg_color=("#EEF4FF", "#26364F"), corner_radius=14,
+            border_width=1, border_color=("#DAE7FA", "#455D7D"))
+        self.fade_card.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 9))
+        fades = ctk.CTkFrame(self.fade_card, fg_color="transparent")
+        fades.pack(fill="x", padx=14, pady=(13, 10))
         self.fade_var = ctk.BooleanVar(value=self.settings["fade_enabled"])
         self.fade_checkbox = ctk.CTkCheckBox(
             fades, text="Плавное появление и затухание",
             variable=self.fade_var, command=self.on_fade_changed)
-        self.fade_checkbox.pack(side="left", padx=(0, 15))
-        ctk.CTkLabel(fades, text="Длительность, с").pack(side="left", padx=(0, 6))
+        self.fade_checkbox.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(fades, text="Длительность, с").pack(side="left", padx=(0, 8))
         self.fade_menu = ctk.CTkOptionMenu(
-            fades, values=["0.5", "1.0", "2.0", "3.0", "5.0"], width=82,
+            fades, values=["0.5", "1.0", "2.0", "3.0", "5.0"], width=85,
             command=self.on_fade_seconds)
         self.fade_menu.set(str(self.settings["fade_seconds"]))
         self.fade_menu.pack(side="left")
-        curves = ctk.CTkFrame(frame, fg_color="transparent")
-        curves.grid(row=11, column=0, sticky="ew", padx=18, pady=(3, 4))
-        ctk.CTkLabel(curves, text="Появление").pack(side="left", padx=(0, 8))
+        ctk.CTkFrame(
+            self.fade_card, height=1, corner_radius=0,
+            fg_color=("#D7E5F7", "#445D80")
+        ).pack(fill="x", padx=17)
+        curves = ctk.CTkFrame(self.fade_card, fg_color="transparent")
+        curves.pack(fill="x", padx=14, pady=(12, 14))
         curve_names = list(FADE_CURVES.values())
+        ctk.CTkLabel(curves, text="⌁", width=28).pack(side="left")
+        ctk.CTkLabel(curves, text="Появление").pack(side="left", padx=(4, 8))
         self.fade_in_menu = ctk.CTkOptionMenu(
-            curves, values=curve_names, width=185,
+            curves, values=curve_names, width=175,
             command=lambda label: self.on_fade_curve("fade_in_curve", label))
         self.fade_in_menu.set(FADE_CURVES[self.settings["fade_in_curve"]])
-        self.fade_in_menu.pack(side="left", padx=(0, 16))
-        ctk.CTkLabel(curves, text="Затухание").pack(side="left", padx=(0, 8))
+        self.fade_in_menu.pack(side="left", padx=(0, 18))
+        ctk.CTkLabel(curves, text="⌁", width=28).pack(side="left")
+        ctk.CTkLabel(curves, text="Затухание").pack(side="left", padx=(4, 8))
         self.fade_out_menu = ctk.CTkOptionMenu(
-            curves, values=curve_names, width=185,
+            curves, values=curve_names, width=175,
             command=lambda label: self.on_fade_curve("fade_out_curve", label))
         self.fade_out_menu.set(FADE_CURVES[self.settings["fade_out_curve"]])
         self.fade_out_menu.pack(side="left")
         self._update_fade_state()
         self._sync_fade_overlay()
 
-        destination = ctk.CTkFrame(frame, fg_color="transparent")
-        destination.grid(row=12, column=0, sticky="ew", padx=18, pady=8)
-        destination.grid_columnconfigure(0, weight=1)
-        self.folder_label = ctk.CTkLabel(destination, text="Сохранение: рядом с оригиналом", anchor="w")
-        self.folder_label.grid(row=0, column=0, sticky="ew")
-        self.folder_button = ctk.CTkButton(destination, text="Изменить", width=100, command=self.choose_folder)
-        self.folder_button.grid(row=0, column=1)
-        self.target_label = ctk.CTkLabel(frame, text="Результат: —", anchor="w")
-        self.target_label.grid(row=13, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.folder_card = ctk.CTkFrame(
+            frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
+            border_width=1, border_color=("#E3E8F0", "#405065"))
+        self.folder_card.grid(row=10, column=0, sticky="ew", padx=18, pady=(0, 7))
+        self.folder_card.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(self.folder_card, text="📁", width=38).grid(
+            row=0, column=0, padx=(12, 0), pady=12)
+        self.folder_label = ctk.CTkLabel(
+            self.folder_card, text="Папка: рядом с оригиналом", anchor="w")
+        self.folder_label.grid(row=0, column=1, sticky="ew", padx=(6, 10), pady=12)
+        self.folder_button = ctk.CTkButton(
+            self.folder_card, text="📁 Изменить", width=136, height=35,
+            command=self.choose_folder)
+        self.folder_button.grid(row=0, column=2, padx=(0, 12), pady=10)
+        self.target_label = ctk.CTkLabel(
+            frame, text="Результат: —", anchor="w")
+        self.target_label.grid(
+            row=11, column=0, sticky="ew", padx=24, pady=(0, 10))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         self.footer = footer
@@ -212,6 +252,7 @@ class AudioCoderApp(ctk.CTk):
                                          state="disabled", command=self.convert)
         self.run_button.pack(side="left")
         self._refresh()
+        self.body_font = apply_body_font(self, excluded=(self.main_heading,))
         self.after(100, self._poll)
 
     def _save(self):
@@ -255,6 +296,29 @@ class AudioCoderApp(ctk.CTk):
             return
         self._help_window = FadeHelpWindow(self)
         self._help_window.focus()
+
+    def _drop_enter(self, event):
+        if self.busy or self.probing:
+            return REFUSE_DROP
+        self.waveform.configure(highlightthickness=2, highlightbackground="#2F87DC")
+        return COPY
+
+    def _drop_leave(self, event=None):
+        self.waveform.configure(highlightthickness=0)
+        return COPY
+
+    def _on_wave_drop(self, event):
+        """Windows Explorer CF_HDROP delivered as a Tcl file list."""
+        self._drop_leave()
+        if self.busy or self.probing:
+            return REFUSE_DROP
+        try:
+            path = dropped_audio_path(event.data, self.tk.splitlist)
+        except ValueError as exc:
+            messagebox.showwarning("Аудиофайл", str(exc), parent=self)
+            return REFUSE_DROP
+        self.open_file(path)
+        return COPY
 
     def choose_file(self):
         folder = self.settings["last_source_dir"]

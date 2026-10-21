@@ -67,7 +67,7 @@ jobs:
       - name: PyInstaller single executable
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name AudioCoder --version-file windows_version_info.txt --icon assets/app.ico --collect-all customtkinter main.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name AudioCoder --version-file windows_version_info.txt --icon assets/app.ico --collect-all customtkinter --collect-all tkinterdnd2 main.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
           if (-not (Test-Path "dist/AudioCoder.exe" -PathType Leaf)) { throw "Missing AudioCoder.exe" }
 

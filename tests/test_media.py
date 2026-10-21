@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,6 +25,8 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(info.sample_rate, 44100)
         self.assertEqual(info.channels, 2)
         self.assertEqual(run.call_args.args[0][-1], str(self.path.resolve()))
+        self.assertEqual(run.call_args.kwargs["creationflags"],
+                         getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
     def test_no_audio_stream(self):
         with patch("audiocoder.media.subprocess.run", return_value=Mock(returncode=0, stdout='{"streams":[]}')):

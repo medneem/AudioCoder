@@ -47,6 +47,56 @@ class UITests(unittest.TestCase):
         help_window.destroy()
         self.window._help_window = None
 
+    def test_approved_settings_cards_and_unified_typography(self):
+        import customtkinter as ctk
+        from audiocoder.ui_style import FONT_FAMILY, BODY_SIZE, TITLE_SIZE
+        for card in (self.window.codec_card, self.window.fade_card,
+                     self.window.folder_card):
+            self.assertIsInstance(card, ctk.CTkFrame)
+            self.assertEqual(card.winfo_manager(), "grid")
+        self.assertEqual(self.window.codec_card.cget("corner_radius"), 14)
+        self.assertNotEqual(self.window.fade_card.cget("fg_color"),
+                            self.window.codec_card.cget("fg_color"))
+        for widget in (
+            self.window.format_menu, self.window.bitrate_menu,
+            self.window.vbr_checkbox, self.window.fade_checkbox,
+            self.window.fade_menu, self.window.fade_in_menu,
+            self.window.fade_out_menu, self.window.folder_button,
+            self.window.help_button, self.window.open_button,
+        ):
+            font = widget.cget("font")
+            self.assertEqual(font.cget("family"), FONT_FAMILY)
+            self.assertEqual(font.cget("size"), BODY_SIZE)
+        self.assertEqual(self.window.main_heading.cget("font").cget("size"),
+                         TITLE_SIZE)
+
+    def test_waveform_accepts_explorer_audio_drop(self):
+        from types import SimpleNamespace
+        from tkinterdnd2 import COPY, REFUSE_DROP
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Песня с пробелами.flac"
+            path.touch()
+            self.window.busy = False
+            self.window.probing = False
+            self.assertTrue(hasattr(self.window.waveform, "drop_target_register"))
+            with patch.object(self.window, "open_file") as open_file:
+                self.assertEqual(self.window._drop_enter(None), COPY)
+                self.assertEqual(self.window._on_wave_drop(
+                    SimpleNamespace(data="{" + str(path) + "}")), COPY)
+                open_file.assert_called_once_with(path)
+            with patch("audiocoder.ui.messagebox.showwarning") as warning:
+                self.assertEqual(self.window._on_wave_drop(
+                    SimpleNamespace(data="{other.txt}")), REFUSE_DROP)
+                warning.assert_called_once()
+            self.window.busy = True
+            try:
+                with patch.object(self.window, "open_file") as open_file:
+                    self.assertEqual(self.window._on_wave_drop(
+                        SimpleNamespace(data="{" + str(path) + "}")), REFUSE_DROP)
+                    open_file.assert_not_called()
+            finally:
+                self.window.busy = False
+
     def test_compact_window_can_scroll_without_hiding_playback_controls(self):
         # Reproduce the problematic 810 x 650 window size. The central editor
         # must scroll while the footer stays visible even at limited height.
