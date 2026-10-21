@@ -255,6 +255,8 @@ class UITests(unittest.TestCase):
 
     def test_real_canvas_paints_with_tk_named_gray86_background(self):
         """Regression: Windows CTkFrame theme returns 'gray86', invalid for PIL."""
+        previous_view = (self.window.waveform.viewport.start,
+                         self.window.waveform.viewport.span)
         self.window.deiconify()
         try:
             self.window.update_idletasks()
@@ -276,11 +278,15 @@ class UITests(unittest.TestCase):
                     self.assertTrue(self.window.waveform.itemcget(
                         self.window.waveform._image_item, "image"))
         finally:
+            (self.window.waveform.viewport.start,
+             self.window.waveform.viewport.span) = previous_view
             self.window.withdraw()
 
     def test_canvas_idle_callback_does_not_fail_silently(self):
         """Tkinter callback exceptions used to be printed but not fail CI."""
         errors = []
+        previous_view = (self.window.waveform.viewport.start,
+                         self.window.waveform.viewport.span)
         self.window.deiconify()
         try:
             self.window.waveform.set_peaks((.35,) * 4096)
@@ -293,6 +299,8 @@ class UITests(unittest.TestCase):
             self.assertEqual(errors, [], "Canvas callback failed: " + repr(errors))
             self.assertIsNotNone(self.window.waveform._image)
         finally:
+            (self.window.waveform.viewport.start,
+             self.window.waveform.viewport.span) = previous_view
             self.window.withdraw()
 
     def test_zoom_detail_updates_width_and_ignores_stale_results(self):
