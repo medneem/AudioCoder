@@ -278,6 +278,23 @@ class UITests(unittest.TestCase):
         finally:
             self.window.withdraw()
 
+    def test_canvas_idle_callback_does_not_fail_silently(self):
+        """Tkinter callback exceptions used to be printed but not fail CI."""
+        errors = []
+        self.window.deiconify()
+        try:
+            self.window.waveform.set_peaks((.35,) * 4096)
+            self.window.waveform.viewport.reset()
+            self.window.waveform.viewport.zoom(3.8, .5)
+            with patch.object(self.window, "report_callback_exception",
+                              side_effect=lambda typ, err, tb: errors.append(str(err))):
+                self.window.waveform.redraw()
+                self.window.update()
+            self.assertEqual(errors, [], "Canvas callback failed: " + repr(errors))
+            self.assertIsNotNone(self.window.waveform._image)
+        finally:
+            self.window.withdraw()
+
     def test_zoom_detail_updates_width_and_ignores_stale_results(self):
         from audiocoder.waveform_view import visible_waveform_columns
         with tempfile.TemporaryDirectory() as tmp:
