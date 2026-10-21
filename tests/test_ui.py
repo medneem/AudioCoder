@@ -253,6 +253,70 @@ class UITests(unittest.TestCase):
         self.assertEqual(self.window.fade_menu.cget("state"), "normal")
         self.assertTrue(self.window.waveform.fade_enabled)
 
+    def test_zoom_detail_updates_width_and_ignores_stale_results(self):
+        from audiocoder.waveform_view import visible_waveform_columns
+        with tempfile.TemporaryDirectory() as tmp:
+            file = Path(tmp) / "detail.flac"
+            file.touch()
+            with patch("audiocoder.ui.save_settings"), patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(file, 120.0, "flac", 44100, 2))
+            self.window.waveform.set_peaks((0.0,) * 4096)
+            self.window.waveform.viewport.zoom(4, 0.5)
+            self.window._on_waveform_view(4.0)
+            self.assertIsNotNone(self.window._detail_timer)
+            old_generation = self.window._detail_generation
+            start = self.window.waveform.viewport.start
+            end = self.window.waveform.viewport.end
+            detail = (0.7,) * 2000
+            self.window.events.put(("waveform_detail", (
+                self.window.source_sequence, old_generation, start, end, detail)))
+            self.window._poll()
+            self.assertEqual(self.window.waveform.detail_peaks, (start, end, detail))
+            columns = visible_waveform_columns(
+                self.window.waveform.peaks, self.window.waveform.viewport, 200,
+                detail=self.window.waveform.detail_peaks)
+            self.assertEqual(columns, (0.7,) * 200)
+
+            self.window.waveform.viewport.pan(-50, 600)
+            self.window._on_waveform_view(4.0)
+            self.assertGreater(self.window._detail_generation, old_generation)
+            # Old FFmpeg worker cannot overwrite a new viewport.
+            self.window.events.put(("waveform_detail", (
+                self.window.source_sequence, old_generation,
+                start, end, (0.9,) * 2000)))
+            self.window._poll()
+            self.assertEqual(self.window.waveform.detail_peaks, (start, end, detail))
+            columns = visible_waveform_columns(
+                self.window.waveform.peaks, self.window.waveform.viewport, 200,
+                detail=self.window.waveform.detail_peaks)
+            self.assertEqual(columns, (0.0,) * 200)
+            self.window._cancel_detail_waveform()
+
+    def test_zoom_decode_uses_visible_range(self):
+        from threading import Event
+        with tempfile.TemporaryDirectory() as tmp:
+            file = Path(tmp) / "detail.flac"
+            file.touch()
+            with patch("audiocoder.ui.save_settings"), patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(file, 120.0, "flac", 44100, 2))
+            self.window.waveform.set_peaks((0.2,) * 4096)
+            self.window.waveform.viewport.zoom(4, .5)
+            self.window._on_waveform_view(4.0)
+            captured = []
+            completed = Event()
+            def mocked_extract(path, **kwargs):
+                captured.append((path, kwargs))
+                completed.set()
+                return (0.3,) * kwargs["width"]
+            with patch("audiocoder.ui.extract_waveform", side_effect=mocked_extract):
+                self.window._start_detail_waveform()
+                self.assertTrue(completed.wait(2), "worker did not start")
+            self.assertEqual(captured[0][0], file)
+            self.assertAlmostEqual(captured[0][1]["start"], 45.0)
+            self.assertAlmostEqual(captured[0][1]["duration"], 30.0)
+            self.assertGreaterEqual(captured[0][1]["width"], 1024)
+            self.window._cancel_detail_waveform()
+
     def test_zoomed_waveform_edit_moves_slider_boundary(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as tmp:
