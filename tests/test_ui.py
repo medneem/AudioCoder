@@ -111,7 +111,7 @@ class UITests(unittest.TestCase):
             self.assertEqual(self.window.footer.winfo_manager(), "grid")
             # All 3 approved settings cards must appear above the pinned footer.
             for widget in (self.window.codec_card, self.window.fade_card,
-                           self.window.folder_card, self.window.target_label):
+                           self.window.folder_card):
                 self.assertEqual(widget.winfo_manager(), "grid")
                 bottom = widget.winfo_rooty() + widget.winfo_height()
                 footer_top = self.window.footer.winfo_rooty()
@@ -138,6 +138,32 @@ class UITests(unittest.TestCase):
                 self.window.winfo_rooty() + self.window.winfo_height() + 4)
         finally:
             self.window.geometry("920x710")
+            self.window.withdraw()
+
+    def test_header_version_removed_and_controls_aligned_right(self):
+        from version import APP_VERSION
+        import customtkinter as ctk
+        header = self.window.main_heading.master
+        labels = [widget.cget("text") for widget in header.winfo_children()
+                  if isinstance(widget, ctk.CTkLabel)]
+        self.assertNotIn(f"v{APP_VERSION}", labels)
+        self.assertEqual(self.window.appearance_menu.pack_info()["side"], "right")
+        self.assertEqual(self.window.help_button.pack_info()["side"], "right")
+        self.assertEqual(self.window.title(), f"AudioCoder {APP_VERSION}")
+
+    def test_no_output_result_row_and_compact_folder_spacing(self):
+        self.assertFalse(hasattr(self.window, "target_label"))
+        self.assertEqual(self.window.editor_panel.grid_slaves(row=11, column=0), [])
+        self.assertEqual(self.window.folder_card.grid_info()["row"], 10)
+        self.window.deiconify()
+        try:
+            self.window.update()
+            minimum = int(self.window.tk.call("wm", "minsize", self.window._w)[1])
+            self.assertGreaterEqual(minimum, self.window.winfo_reqheight())
+            self.assertLessEqual(
+                self.window.folder_card.winfo_rooty() + self.window.folder_card.winfo_height(),
+                self.window.editor_panel.winfo_rooty() + self.window.editor_panel.winfo_height())
+        finally:
             self.window.withdraw()
 
     def test_slider_controls_and_time_labels(self):
@@ -178,7 +204,8 @@ class UITests(unittest.TestCase):
             destination = self.window._destination()
             destination.write_bytes(b"existing")
             self.window._preview()
-            self.assertIn("будет заменён", self.window.target_label.cget("text"))
+            self.assertFalse(hasattr(self.window, "target_label"))
+            self.assertIn(str(destination.parent), self.window.folder_label.cget("text"))
             self.assertEqual(self.window.run_button.cget("state"), "normal")
 
     def test_play_button_and_drag_previews(self):
