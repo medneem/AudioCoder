@@ -64,14 +64,13 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.main_heading = ctk.CTkLabel(header, text="AudioCoder",
                                          font=ctk.CTkFont(family=FONT_FAMILY, size=TITLE_SIZE, weight="bold"))
         self.main_heading.pack(side="left")
-        ctk.CTkLabel(header, text=f"v{APP_VERSION}", text_color="gray").pack(side="right")
         self.appearance_menu = ctk.CTkOptionMenu(
             header, values=["Светлая", "Тёмная", "Системная"], width=125,
             command=self.on_appearance)
         self.appearance_menu.set({
             "Light": "Светлая", "Dark": "Тёмная", "System": "Системная",
         }[self.settings["appearance"]])
-        self.appearance_menu.pack(side="right", padx=(0, 16))
+        self.appearance_menu.pack(side="right")
         self.help_button = ctk.CTkButton(
             header, text="❔ Справка", width=110, command=self.open_help)
         self.help_button.pack(side="right", padx=(0, 12))
@@ -216,7 +215,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.folder_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
-        self.folder_card.grid(row=10, column=0, sticky="ew", padx=16, pady=(0, 4))
+        self.folder_card.grid(row=10, column=0, sticky="ew", padx=16, pady=(0, 5))
         self.folder_card.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.folder_card, text="📁", width=38).grid(
             row=0, column=0, padx=(12, 0), pady=6)
@@ -227,11 +226,6 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.folder_card, text="📁 Изменить", width=136, height=30,
             command=self.choose_folder)
         self.folder_button.grid(row=0, column=2, padx=(0, 12), pady=6)
-        self.target_label = ctk.CTkLabel(
-            frame, text="Результат: —", anchor="w")
-        self.target_label.grid(
-            row=11, column=0, sticky="ew", padx=20, pady=(0, 3))
-
         footer = ctk.CTkFrame(self, fg_color="transparent")
         self.footer = footer
         footer.grid(row=2, column=0, sticky="ew", padx=17, pady=(2, 8))
@@ -600,10 +594,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             try:
                 path = self._destination()
                 self.folder_label.configure(text=f"Папка: {path.parent}")
-                action = " (будет заменён)" if path.exists() else ""
-                self.target_label.configure(text=f"Результат: {path.name}{action}")
             except ValueError as exc:
-                self.target_label.configure(text=f"Ошибка: {exc}")
+                self.status.configure(text=f"Ошибка параметров: {exc}")
         self._refresh()
 
     def _refresh(self):
