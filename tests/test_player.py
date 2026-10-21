@@ -8,10 +8,15 @@ from audiocoder.player import AudioPlayer, PlaybackWindow, ffplay_command, liste
 
 
 class PlaybackTests(unittest.TestCase):
-    def test_selection_and_left_play_until_right(self):
-        for mode in ("selection", "left"):
+    def test_button_plays_entire_selection(self):
+        for mode in ("selection",):
             with self.subTest(mode=mode):
                 self.assertEqual(listening_window(mode, 80, 190), PlaybackWindow(80, 190))
+
+    def test_left_previews_five_seconds_from_left_marker(self):
+        self.assertEqual(listening_window("left", 80, 190), PlaybackWindow(80, 85))
+        self.assertEqual(listening_window("left", 80, 83), PlaybackWindow(80, 83))
+        self.assertEqual(listening_window("selection", 80, 190), PlaybackWindow(80, 190))
 
     def test_right_previews_last_one_second(self):
         self.assertEqual(listening_window("right", 80, 190), PlaybackWindow(189, 190))

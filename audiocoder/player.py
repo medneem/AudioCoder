@@ -31,7 +31,11 @@ def listening_window(mode: str, left: float, right: float) -> PlaybackWindow:
         raise ValueError("Неизвестный режим воспроизведения.")
     if not all(math.isfinite(v) for v in (left, right)) or left < 0 or right <= left:
         raise ValueError("Некорректный диапазон.")
-    return PlaybackWindow(max(left, right - 1.0) if mode == "right" else left, right)
+    if mode == "right":
+        return PlaybackWindow(max(left, right - 1.0), right)
+    if mode == "left":
+        return PlaybackWindow(left, min(left + 5.0, right))
+    return PlaybackWindow(left, right)
 
 
 def ffplay_command(source: Path, window: PlaybackWindow, binary: Path) -> list[str]:

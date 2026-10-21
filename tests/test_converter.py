@@ -48,6 +48,50 @@ class ConverterTests(unittest.TestCase):
         self.assertIn("-n", cmd)
         self.assertNotIn("-y", cmd)
 
+    def test_mp3_vbr_and_cbr_use_distinct_controls(self):
+        for enabled in (True, False):
+            job = ConversionJob(self.info, self.destination, "MP3",
+                                ClipRange(0, 10, 10), "192k",
+                                vbr_enabled=enabled, vbr_quality=1)
+            cmd = ffmpeg_command(job, self.destination, Path("ffmpeg"))
+            if enabled:
+                self.assertEqual(cmd[cmd.index("-q:a") + 1], "1")
+                self.assertNotIn("-b:a", cmd)
+            else:
+                self.assertEqual(cmd[cmd.index("-b:a") + 1], "192k")
+                self.assertNotIn("-q:a", cmd)
+
+    def test_opus_vbr_option_and_bitrate(self):
+        target = output_path(self.source, self.root, "Opus")
+        for enabled in (True, False):
+            job = ConversionJob(self.info, target, "Opus", ClipRange(0, 10, 10),
+                                bitrate="256k", vbr_enabled=enabled)
+            cmd = ffmpeg_command(job, target, Path("ffmpeg"))
+            self.assertEqual(cmd[cmd.index("-vbr") + 1],
+                             "on" if enabled else "off")
+            self.assertEqual(cmd[cmd.index("-b:a") + 1], "256k")
+
+    def test_different_fade_in_and_fade_out_curves(self):
+        job = ConversionJob(
+            self.info, self.destination, "MP3", ClipRange(0, 10, 10),
+            fade_enabled=True, fade_in_curve="qsin", fade_out_curve="cub")
+        cmd = ffmpeg_command(job, self.destination, Path("ffmpeg"))
+        filters = cmd[cmd.index("-af") + 1]
+        self.assertIn("curve=qsin", filters)
+        self.assertIn("curve=cub", filters)
+
+    def test_invalid_options_are_rejected(self):
+        params = (
+            {"fade_in_curve": "not-a-filter"},
+            {"fade_out_curve": "not-a-filter"},
+            {"vbr_enabled": "on"},
+            {"vbr_quality": 10},
+        )
+        for overrides in params:
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                ConversionJob(self.info, self.destination, "MP3",
+                              ClipRange(0, 10, 10), **overrides)
+
     def test_maximum_quality_parameters(self):
         for format_name, codec, quality in (
             ("FLAC", "flac", "12"),

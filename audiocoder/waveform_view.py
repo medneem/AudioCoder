@@ -4,11 +4,11 @@ Draw waveform pixels to one cached PhotoImage, not hundreds of Canvas items
 on each handle movement. The playhead remains a lightweight Canvas line.
 """
 import tkinter as tk
-import math
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 from .waveform_navigation import WaveformViewport, clamp
+from .fade import fade_gain
 
 
 class WaveformView(tk.Canvas):
@@ -20,6 +20,8 @@ class WaveformView(tk.Canvas):
         self.playhead: float | None = None
         self.fade_enabled = False
         self.fade_fraction = 0.0
+        self.fade_in_curve = "log"
+        self.fade_out_curve = "log"
         self.viewport = WaveformViewport()
         self.on_edit = on_edit
         self.on_view_change = on_view_change
@@ -56,9 +58,12 @@ class WaveformView(tk.Canvas):
             self.selection = new
             self.redraw()
 
-    def set_fade(self, enabled: bool, seconds: float, duration: float):
+    def set_fade(self, enabled: bool, seconds: float, duration: float,
+                 curve_in: str = "log", curve_out: str = "log"):
         self.fade_enabled = bool(enabled)
         self.fade_fraction = max(0.0, seconds / duration) if duration > 0 else 0.0
+        self.fade_in_curve = curve_in
+        self.fade_out_curve = curve_out
         self.redraw()
 
     def set_playhead(self, position: float | None, duration: float = 1.0):
@@ -172,9 +177,11 @@ class WaveformView(tk.Canvas):
             if fade_frac > 0:
                 top, bottom = 9, h - 9
                 fade_colour = "#E04444" if dark else "#D92D2D"
-                for begin, end, direction in (
-                    (self.selection[0], self.selection[0] + fade_frac, "in"),
-                    (self.selection[1] - fade_frac, self.selection[1], "out"),
+                for begin, end, direction, curve in (
+                    (self.selection[0], self.selection[0] + fade_frac,
+                     "in", self.fade_in_curve),
+                    (self.selection[1] - fade_frac, self.selection[1],
+                     "out", self.fade_out_curve),
                 ):
                     points = []
                     for x in range(w):
@@ -184,7 +191,7 @@ class WaveformView(tk.Canvas):
                         progress = (position - begin) / fade_frac
                         if direction == "out":
                             progress = 1 - progress
-                        gain = math.log1p(9 * progress) / math.log(10)
+                        gain = fade_gain(curve, progress)
                         points.append((x, int(bottom - gain * (bottom - top))))
                     if len(points) >= 2:
                         draw.line(points, fill=fade_colour, width=2)

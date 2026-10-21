@@ -82,7 +82,7 @@ class UITests(unittest.TestCase):
                 self.window._left_moved(20)
                 self.assertIsNotNone(self.window._preview_timer)
                 self.window._slider_released()
-                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 25))
                 self.window._right_moved(80)
                 self.window._slider_released()
                 self.assertEqual(play.call_args.args[1], PlaybackWindow(79, 80))
@@ -127,8 +127,58 @@ class UITests(unittest.TestCase):
             self.window.on_range(self.window.slider.get())
             self.assertAlmostEqual(self.window.waveform.selection[0], .25)
 
+    def test_vbr_mode_and_fade_curve_controls_persist(self):
+        from audiocoder.settings import load_settings, save_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            with patch("audiocoder.ui.save_settings",
+                       side_effect=lambda settings: save_settings(settings, folder)):
+                self.window.on_format("MP3")
+                self.window.vbr_var.set(True)
+                self.window.on_vbr_changed()
+                self.window.on_vbr_quality("0")
+                self.window.fade_var.set(True)
+                self.window.on_fade_changed()
+                self.window.on_fade_curve("fade_in_curve", "Четверть синусоиды")
+                self.window.on_fade_curve("fade_out_curve", "Кубический")
+            restored = load_settings(folder)
+            self.assertTrue(restored["vbr_enabled"])
+            self.assertEqual(restored["vbr_quality"], 0)
+            self.assertEqual(restored["fade_in_curve"], "qsin")
+            self.assertEqual(restored["fade_out_curve"], "cub")
+            self.assertEqual(self.window.bitrate_menu.cget("state"), "disabled")
+            self.assertEqual(self.window.vbr_quality_menu.cget("state"), "normal")
+
+    def test_range_and_view_persist_for_same_source(self):
+        from audiocoder.settings import load_settings, save_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            path = folder / "Песня.flac"
+            path.touch()
+            with patch("audiocoder.ui.save_settings",
+                       side_effect=lambda settings: save_settings(settings, folder)), \
+                 patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(path, 120.0, "flac", 44100, 2))
+                self.window.slider.set([12.5, 75])
+                self.window.on_range(self.window.slider.get())
+                self.window.waveform.viewport.zoom(4, .5)
+                self.window.waveform._view_changed()
+                self.window._save()
+                saved = load_settings(folder)
+                self.assertAlmostEqual(saved["clip_start"], 12.5)
+                self.assertAlmostEqual(saved["clip_end"], 75)
+                self.assertAlmostEqual(saved["waveform_zoom"], 4)
+                # Simulate closing/reopening the source with restored JSON.
+                self.window.settings = saved
+                self.window._loaded(AudioInfo(path, 120.0, "flac", 44100, 2))
+                self.assertAlmostEqual(self.window.slider.get()[0], 12.5)
+                self.assertAlmostEqual(self.window.slider.get()[1], 75)
+                self.assertAlmostEqual(self.window.waveform.viewport.zoom_level, 4)
+
     def test_mp3_bitrate_selector(self):
         self.window.settings["target_format"] = "FLAC"
+        self.window.settings["vbr_enabled"] = False
+        self.window.vbr_var.set(False)
         self.window._refresh()
         self.assertEqual(self.window.bitrate_menu.cget("state"), "disabled")
         with patch("audiocoder.ui.save_settings"):

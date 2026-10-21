@@ -43,6 +43,42 @@ class ConversionIntegrationTests(unittest.TestCase):
             self.assertLess(rms(0, .025), center * .85)
             self.assertLess(rms(.975, 1), center * .85)
 
+    def test_mp3_cbr_and_vbr_both_encode_real_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "tone.wav"
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                "-c:a", "pcm_s16le", "-y", str(source),
+            ], check=True, capture_output=True)
+            info = probe_audio(source)
+            for vbr in (False, True):
+                dest = root / ("vbr.mp3" if vbr else "cbr.mp3")
+                job = ConversionJob(info, dest, "MP3", ClipRange(0, .9, info.duration),
+                                    bitrate="192k", vbr_enabled=vbr, vbr_quality=2)
+                ConversionRunner().run(job)
+                self.assertTrue(dest.is_file())
+                self.assertEqual(probe_audio(dest).codec, "mp3")
+
+    def test_opus_cbr_and_vbr_both_encode_real_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "tone.wav"
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                "-c:a", "pcm_s16le", "-y", str(source),
+            ], check=True, capture_output=True)
+            info = probe_audio(source)
+            for vbr in (False, True):
+                dest = root / ("vbr.opus" if vbr else "cbr.opus")
+                job = ConversionJob(info, dest, "Opus", ClipRange(0, .9, info.duration),
+                                    bitrate="192k", vbr_enabled=vbr)
+                ConversionRunner().run(job)
+                self.assertTrue(dest.is_file())
+                self.assertEqual(probe_audio(dest).codec, "opus")
+
     def test_trim_lossless_flac_to_mp3(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
