@@ -97,32 +97,47 @@ class UITests(unittest.TestCase):
             finally:
                 self.window.busy = False
 
-    def test_compact_window_can_scroll_without_hiding_playback_controls(self):
-        # Reproduce the problematic 810 x 650 window size. The central editor
-        # must scroll while the footer stays visible even at limited height.
+    def test_compact_editor_has_no_internal_scroll_and_no_clipped_footer(self):
         import customtkinter as ctk
-        self.assertIsInstance(self.window.editor_panel, ctk.CTkScrollableFrame)
-        self.assertEqual(self.window.footer.winfo_manager(), "grid")
+        self.assertIsInstance(self.window.editor_panel, ctk.CTkFrame)
+        self.assertNotIsInstance(self.window.editor_panel, ctk.CTkScrollableFrame)
+        self.assertFalse(hasattr(self.window.editor_panel, "_parent_canvas"))
         self.window.deiconify()
         try:
-            self.window.geometry("810x650")
-            self.window.update_idletasks()
-            scroll_canvas = self.window.editor_panel._parent_canvas
-            top, bottom = scroll_canvas.yview()
-            self.assertLess(bottom, 1.0, "All editor controls unexpectedly fit; test did not exercise overflow")
-            self.assertAlmostEqual(top, 0.0)
+            self.window.update()
+            self.assertEqual(int(self.window.waveform.cget("height")), 120)
+            self.assertLessEqual(self.window.winfo_reqheight(),
+                                 self.window.winfo_height())
+            self.assertEqual(self.window.footer.winfo_manager(), "grid")
+            # All 3 approved settings cards must appear above the pinned footer.
+            for widget in (self.window.codec_card, self.window.fade_card,
+                           self.window.folder_card, self.window.target_label):
+                self.assertEqual(widget.winfo_manager(), "grid")
+                bottom = widget.winfo_rooty() + widget.winfo_height()
+                footer_top = self.window.footer.winfo_rooty()
+                self.assertLessEqual(bottom, footer_top)
             self.assertLessEqual(
                 self.window.footer.winfo_rooty() + self.window.footer.winfo_height(),
-                self.window.winfo_rooty() + self.window.winfo_height() + 4,
-                "Playback and conversion footer is outside the window",
-            )
-            scroll_canvas.yview_moveto(1.0)
-            self.window.update_idletasks()
-            self.assertGreater(scroll_canvas.yview()[0], top)
-            self.assertEqual(self.window.run_button.winfo_manager(), "pack")
+                self.window.winfo_rooty() + self.window.winfo_height() + 4)
+        finally:
+            self.window.withdraw()
+
+    def test_window_rejects_height_too_small_to_show_all_controls(self):
+        self.window.deiconify()
+        try:
+            self.window.update()
+            # CustomTkinter 5.2.x does not implement a getter for minsize();
+            # use the native window-manager query instead.
+            minimum = int(self.window.tk.call("wm", "minsize", self.window._w)[1])
+            self.assertGreaterEqual(minimum, self.window.winfo_reqheight())
+            self.window.geometry("920x500")
+            self.window.update()
+            self.assertGreaterEqual(self.window.winfo_height(), minimum)
+            self.assertLessEqual(
+                self.window.footer.winfo_rooty() + self.window.footer.winfo_height(),
+                self.window.winfo_rooty() + self.window.winfo_height() + 4)
         finally:
             self.window.geometry("920x710")
-            self.window.editor_panel._parent_canvas.yview_moveto(0.0)
             self.window.withdraw()
 
     def test_slider_controls_and_time_labels(self):
