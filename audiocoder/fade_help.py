@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from .fade import FADE_CURVES
 from .fade_preview import FadePreview
+from .ui_style import FONT_FAMILY, BODY_SIZE, apply_body_font
 
 
 FADE_DESCRIPTIONS = {
@@ -62,10 +63,10 @@ class FadeHelpWindow(ctk.CTkToplevel):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 8))
         header.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
+        self.help_heading = ctk.CTkLabel(
             header, text="Алгоритмы появления и затухания",
-            font=ctk.CTkFont(size=22, weight="bold")
-        ).grid(row=0, column=0, sticky="w")
+            font=ctk.CTkFont(family=FONT_FAMILY, size=22, weight="bold"))
+        self.help_heading.grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
             header, text="Закрыть", width=90,
             command=self.destroy
@@ -105,6 +106,7 @@ class FadeHelpWindow(ctk.CTkToplevel):
             preview.set_curves(curve_id, curve_id)
             self._diagrams.append(preview)
 
+        apply_body_font(self, excluded=(self.help_heading,))
         self.lift()
 
     def refresh_theme(self):
