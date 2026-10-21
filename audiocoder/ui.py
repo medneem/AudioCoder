@@ -23,7 +23,7 @@ from .drag_drop import dropped_audio_path
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
 from .palette import (CARD, CARD_BORDER, CANCEL_BG, CANCEL_HOVER,
                       DND_BORDER, FADE_BORDER, FADE_CARD, FADE_DIVIDER,
-                      ZOOM_ROW, theme_path)
+                      ZOOM_ROW, theme_color, theme_path)
 from .selection import ClipRange, clock
 from .settings import DEFAULTS, load_settings, save_settings
 
@@ -345,7 +345,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             return REFUSE_DROP
         self.waveform.configure(
             highlightthickness=2,
-            highlightbackground=self.waveform._apply_appearance_mode(DND_BORDER))
+            highlightbackground=theme_color(
+                DND_BORDER, dark=ctk.get_appearance_mode() == "Dark"))
         return COPY
 
     def _drop_leave(self, event=None):
