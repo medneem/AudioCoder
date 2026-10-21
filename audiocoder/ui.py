@@ -33,8 +33,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
         self.title(f"AudioCoder {APP_VERSION}")
-        self.geometry("920x710")
-        self.minsize(810, 650)
+        self.geometry("920x690")
+        self.minsize(810, 620)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.events = queue.Queue()
         self.info = None
@@ -259,9 +259,11 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         enforce it instead of relying on one magic minimum for every monitor.
         """
         self.update_idletasks()
-        minimum = max(650, self.winfo_reqheight())
+        minimum = max(620, self.winfo_reqheight())
         self.minsize(810, minimum)
-        self.geometry(f"920x{max(710, minimum)}")
+        # Match the natural content height: no artificial grey space below
+        # the output folder card when the redundant result row is absent.
+        self.geometry(f"920x{minimum}")
 
     def _save(self):
         if self._save_timer is not None:
