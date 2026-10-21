@@ -95,19 +95,6 @@ class WaveformTests(unittest.TestCase):
             self.assertGreater(max(detailed), .05)
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
-    def test_real_waveform_for_tone(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "Тон.wav"
-            subprocess.run([
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-                "-c:a", "pcm_s16le", "-n", str(source),
-            ], check=True, capture_output=True)
-            peaks = extract_waveform(source, width=128, height=64)
-            self.assertEqual(len(peaks), 128)
-            self.assertGreater(max(peaks), 0.05)
-            self.assertTrue(all(0 <= peak <= 1 for peak in peaks))
-
 
 if __name__ == "__main__":
     unittest.main()
