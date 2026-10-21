@@ -47,6 +47,24 @@ class UITests(unittest.TestCase):
         help_window.destroy()
         self.window._help_window = None
 
+    def test_muted_palette_is_used_by_real_gui_widgets(self):
+        import customtkinter as ctk
+        from audiocoder.palette import (ACCENT, CARD, CARD_BORDER,
+                                         FADE_CARD, FADE_BORDER, ZOOM_ROW,
+                                         CANCEL_BG)
+        self.assertEqual(
+            tuple(ctk.ThemeManager.theme["CTkButton"]["fg_color"]), ACCENT)
+        self.assertEqual(tuple(self.window.codec_card.cget("fg_color")), CARD)
+        self.assertEqual(tuple(self.window.codec_card.cget("border_color")), CARD_BORDER)
+        self.assertEqual(tuple(self.window.fade_card.cget("fg_color")), FADE_CARD)
+        self.assertEqual(tuple(self.window.fade_card.cget("border_color")), FADE_BORDER)
+        self.assertEqual(tuple(self.window.format_menu.cget("fg_color")), ACCENT)
+        self.assertEqual(tuple(self.window.progress.cget("progress_color")), ACCENT)
+        self.assertEqual(tuple(self.window.slider.cget("button_color")), ACCENT)
+        self.assertEqual(tuple(self.window.cancel_button.cget("fg_color")), CANCEL_BG)
+        self.assertEqual(
+            tuple(self.window.zoom_label.master.cget("fg_color")), ZOOM_ROW)
+
     def test_approved_settings_cards_and_unified_typography(self):
         import customtkinter as ctk
         from audiocoder.ui_style import FONT_FAMILY, BODY_SIZE, TITLE_SIZE
