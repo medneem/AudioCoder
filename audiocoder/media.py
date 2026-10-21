@@ -43,7 +43,8 @@ def probe_audio(path: Path, ffprobe: Path | None = None) -> AudioInfo:
     ]
     try:
         process = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                                 errors="replace", timeout=30, check=False)
+                                 errors="replace", timeout=30, check=False,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired as exc:
         raise ValueError("FFprobe не ответил за 30 секунд.") from exc
     if process.returncode:
