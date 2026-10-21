@@ -39,14 +39,14 @@ jobs:
           python scripts/stamp_version.py "$env:BASE_VERSION" "$env:GITHUB_RUN_NUMBER"
           python -c "from version import APP_VERSION; print(APP_VERSION)"
 
-      - name: Download FFmpeg and FFprobe
+      - name: Download FFmpeg, FFprobe and FFplay
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force tools | Out-Null
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "tools/ffmpeg.zip"
           Expand-Archive -Path "tools/ffmpeg.zip" -DestinationPath "tools/ffmpeg" -Force
-          foreach ($name in @("ffmpeg", "ffprobe")) {
+          foreach ($name in @("ffmpeg", "ffprobe", "ffplay")) {
             $binary = Get-ChildItem "tools/ffmpeg" -Recurse -Filter "$name.exe" -File | Select-Object -First 1
             if (-not $binary) { throw "Missing $name.exe" }
             Copy-Item $binary.FullName "tools/$name.exe"
@@ -54,6 +54,7 @@ jobs:
           (Resolve-Path "tools").Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           & "tools/ffmpeg.exe" -version | Select-Object -First 1
           & "tools/ffprobe.exe" -version | Select-Object -First 1
+          & "tools/ffplay.exe" -version | Select-Object -First 1
 
       - name: Unit, GUI and integration tests
         run: |
@@ -81,12 +82,13 @@ jobs:
           Copy-Item "dist/AudioCoder.exe" $folder
           Copy-Item "tools/ffmpeg.exe" $folder
           Copy-Item "tools/ffprobe.exe" $folder
+          Copy-Item "tools/ffplay.exe" $folder
           Copy-Item "assets/app.png" (Join-Path $folder "app-icon.png")
           Copy-Item "LICENSE" $folder
           Copy-Item "THIRD_PARTY_NOTICES.md" $folder
           Copy-Item "vendor/CTkRangeSlider/LICENSE" (Join-Path $folder "CTkRangeSlider-LICENSE.txt")
           Set-Content -Path (Join-Path $folder "VERSION.txt") -Value $version -Encoding utf8
-          $expected = @("AudioCoder.exe", "ffmpeg.exe", "ffprobe.exe", "app-icon.png", "LICENSE", "THIRD_PARTY_NOTICES.md", "CTkRangeSlider-LICENSE.txt", "VERSION.txt")
+          $expected = @("AudioCoder.exe", "ffmpeg.exe", "ffprobe.exe", "ffplay.exe", "app-icon.png", "LICENSE", "THIRD_PARTY_NOTICES.md", "CTkRangeSlider-LICENSE.txt", "VERSION.txt")
           $files = @(Get-ChildItem -LiteralPath $folder -File)
           if (@(Get-ChildItem -LiteralPath $folder -Directory).Count -ne 0) { throw "Unexpected subfolders" }
           if ($files.Count -ne $expected.Count) { throw "Unexpected file count" }
@@ -140,5 +142,5 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$zip" --clobber
           else
-            gh release create "$tag" "$zip" --target "$GITHUB_SHA" --title "AudioCoder $tag" --notes "Портативный AudioCoder для Windows x64. Распакуйте ZIP и запустите AudioCoder.exe. FFmpeg и FFprobe входят в архив, config.json создаётся при первом запуске." --latest
+            gh release create "$tag" "$zip" --target "$GITHUB_SHA" --title "AudioCoder $tag" --notes "Портативный AudioCoder для Windows x64. Распакуйте ZIP и запустите AudioCoder.exe. FFmpeg, FFprobe и FFplay входят в архив, config.json создаётся при первом запуске." --latest
           fi

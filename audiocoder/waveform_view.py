@@ -13,6 +13,7 @@ class WaveformView(tk.Canvas):
                          relief="flat", **kwargs)
         self.peaks: tuple[float, ...] = ()
         self.selection: tuple[float, float] = (0.0, 1.0)
+        self.playhead: float | None = None
         self._pending = False
         self.bind("<Configure>", lambda event: self.redraw())
         self.redraw()
@@ -27,6 +28,12 @@ class WaveformView(tk.Canvas):
         else:
             self.selection = (max(0.0, min(1.0, start / duration)),
                               max(0.0, min(1.0, end / duration)))
+        self.redraw()
+
+    def set_playhead(self, position: float | None, duration: float = 1.0):
+        """Show approximate FFplay position on waveform, independently of handles."""
+        self.playhead = None if position is None or duration <= 0 else max(
+            0.0, min(1.0, position / duration))
         self.redraw()
 
     def redraw(self):
@@ -63,3 +70,8 @@ class WaveformView(tk.Canvas):
                              fill=active if x1 <= x <= x2 else muted, width=1)
         for pos in (x1, x2):
             self.create_line(pos, 0, pos, height, fill=active, width=1)
+        if self.playhead is not None:
+            position = int(self.playhead * width)
+            self.create_line(position, 0, position, height,
+                             fill="#E95757" if dark else "#CF2535", width=2,
+                             tags="playhead")
