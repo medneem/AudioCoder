@@ -13,11 +13,11 @@ class PlaybackTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.assertEqual(listening_window(mode, 80, 190), PlaybackWindow(80, 190))
 
-    def test_right_previews_last_five_seconds(self):
-        self.assertEqual(listening_window("right", 80, 190), PlaybackWindow(185, 190))
+    def test_right_previews_last_one_second(self):
+        self.assertEqual(listening_window("right", 80, 190), PlaybackWindow(189, 190))
 
     def test_short_right_preview_clamped_to_left(self):
-        self.assertEqual(listening_window("right", 83, 86), PlaybackWindow(83, 86))
+        self.assertEqual(listening_window("right", 85.7, 86), PlaybackWindow(85.7, 86))
         self.assertEqual(listening_window("right", 0, 2), PlaybackWindow(0, 2))
 
     def test_invalid(self):
@@ -28,8 +28,8 @@ class PlaybackTests(unittest.TestCase):
 
     def test_ffplay_command(self):
         cmd = ffplay_command(Path("Музыка.flac"), PlaybackWindow(185, 190), Path("ffplay"))
-        self.assertEqual(cmd[cmd.index("-ss") + 1], "185.000000")
-        self.assertEqual(cmd[cmd.index("-t") + 1], "5.000000")
+        self.assertEqual(cmd[cmd.index("-ss") + 1], "189.000000")
+        self.assertEqual(cmd[cmd.index("-t") + 1], "1.000000")
         self.assertIn("-nodisp", cmd)
         self.assertIn("-autoexit", cmd)
         self.assertIn("-vn", cmd)

@@ -13,6 +13,8 @@ DEFAULTS = {
     "target_format": "FLAC",
     "bitrate": "192k",
     "appearance": "Light",
+    "fade_enabled": False,
+    "fade_seconds": 1.0,
 }
 
 
@@ -26,12 +28,16 @@ def validate(config: dict) -> dict:
     if not isinstance(config, dict):
         raise ValueError("config.json должен содержать JSON-объект.")
     settings = {**DEFAULTS, **config}
-    if any(not isinstance(settings[key], str) for key in DEFAULTS):
+    if any(not isinstance(settings[key], str) for key in ("last_source_dir", "output_dir", "target_format", "bitrate", "appearance")):
         raise ValueError("Параметры config.json должны быть строками.")
     if settings["target_format"] not in FORMATS or settings["bitrate"] not in BITRATES:
         raise ValueError("Некорректный формат или битрейт в config.json.")
     if settings["appearance"] not in ("Light", "Dark", "System"):
         raise ValueError("Некорректная тема в config.json.")
+    if type(settings["fade_enabled"]) is not bool:
+        raise ValueError("fade_enabled должен быть логическим значением.")
+    if type(settings["fade_seconds"]) not in (int, float) or not (0.1 <= settings["fade_seconds"] <= 20):
+        raise ValueError("fade_seconds должен быть числом от 0.1 до 20.")
     return {key: settings[key] for key in DEFAULTS}
 
 

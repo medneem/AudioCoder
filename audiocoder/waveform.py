@@ -38,7 +38,7 @@ def peak_columns(raw: bytes, width: int, height: int) -> tuple[float, ...]:
 
 
 def extract_waveform(path: Path, ffmpeg: Path | None = None,
-                     *, width: int = 960, height: int = 120,
+                     *, width: int = 4096, height: int = 120,
                      timeout: int = 180) -> tuple[float, ...]:
     """Decode the first audio stream into one waveform preview in a worker thread."""
     path = Path(path)

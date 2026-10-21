@@ -27,8 +27,8 @@ class AudioCoderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"AudioCoder {APP_VERSION}")
-        self.geometry("790x640")
-        self.minsize(680, 590)
+        self.geometry("800x730")
+        self.minsize(700, 680)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.events = queue.Queue()
         self.info = None
@@ -83,7 +83,9 @@ class AudioCoderApp(ctk.CTk):
         self.length_time.grid(row=0, column=1)
         self.right_time = ctk.CTkLabel(times, text="00:00:00.000")
         self.right_time.grid(row=0, column=2, sticky="e")
-        self.waveform = WaveformView(frame, height=122)
+        self.waveform = WaveformView(
+            frame, height=140, on_edit=self._waveform_edit,
+            on_view_change=self._on_waveform_view)
         self.waveform.grid(row=5, column=0, sticky="ew", padx=24, pady=(5, 4))
         self.slider = CTkRangeSlider(
             frame, from_=0, to=1, height=20, state="disabled",
@@ -92,9 +94,20 @@ class AudioCoderApp(ctk.CTk):
         # The vendored range slider handles mouse events on its inner Canvas.
         # Keep its internal drag handlers; add only a release notification.
         self.slider._canvas.bind("<ButtonRelease-1>", self._slider_released, add="+")
+        zoom_row = ctk.CTkFrame(frame, fg_color="transparent")
+        zoom_row.grid(row=7, column=0, sticky="ew", padx=24, pady=(0, 5))
+        zoom_row.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            zoom_row, text="Колесо — масштаб • Правая кнопка — сдвиг • Левая — границы",
+            font=ctk.CTkFont(size=11)
+        ).grid(row=0, column=0, sticky="w")
+        self.zoom_label = ctk.CTkLabel(zoom_row, text="×1.0", width=50)
+        self.zoom_label.grid(row=0, column=1, padx=(5, 8))
+        ctk.CTkButton(zoom_row, text="Сброс", width=65,
+                      command=self.waveform.reset_view).grid(row=0, column=2)
 
         options = ctk.CTkFrame(frame, fg_color="transparent")
-        options.grid(row=7, column=0, sticky="w", padx=18, pady=6)
+        options.grid(row=8, column=0, sticky="w", padx=18, pady=6)
         ctk.CTkLabel(options, text="Формат").pack(side="left", padx=(0, 8))
         self.format_menu = ctk.CTkOptionMenu(
             options, values=list(FORMATS), width=115, command=self.on_format)
@@ -106,15 +119,30 @@ class AudioCoderApp(ctk.CTk):
         self.bitrate_menu.set(self.settings["bitrate"])
         self.bitrate_menu.pack(side="left")
 
+        fades = ctk.CTkFrame(frame, fg_color="transparent")
+        fades.grid(row=9, column=0, sticky="w", padx=18, pady=(5, 7))
+        self.fade_var = ctk.BooleanVar(value=self.settings["fade_enabled"])
+        self.fade_checkbox = ctk.CTkCheckBox(
+            fades, text="Плавное логарифмическое появление и затухание",
+            variable=self.fade_var, command=self.on_fade_changed)
+        self.fade_checkbox.pack(side="left", padx=(0, 15))
+        ctk.CTkLabel(fades, text="Длительность, с").pack(side="left", padx=(0, 6))
+        self.fade_menu = ctk.CTkOptionMenu(
+            fades, values=["0.5", "1.0", "2.0", "3.0", "5.0"], width=82,
+            command=self.on_fade_seconds)
+        self.fade_menu.set(str(self.settings["fade_seconds"]))
+        self.fade_menu.pack(side="left")
+        self._update_fade_state()
+
         destination = ctk.CTkFrame(frame, fg_color="transparent")
-        destination.grid(row=8, column=0, sticky="ew", padx=18, pady=8)
+        destination.grid(row=10, column=0, sticky="ew", padx=18, pady=8)
         destination.grid_columnconfigure(0, weight=1)
         self.folder_label = ctk.CTkLabel(destination, text="Сохранение: рядом с оригиналом", anchor="w")
         self.folder_label.grid(row=0, column=0, sticky="ew")
         self.folder_button = ctk.CTkButton(destination, text="Изменить", width=100, command=self.choose_folder)
         self.folder_button.grid(row=0, column=1)
         self.target_label = ctk.CTkLabel(frame, text="Результат: —", anchor="w")
-        self.target_label.grid(row=9, column=0, sticky="ew", padx=18, pady=(2, 8))
+        self.target_label.grid(row=11, column=0, sticky="ew", padx=18, pady=(2, 8))
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 20))
@@ -170,6 +198,7 @@ class AudioCoderApp(ctk.CTk):
         self.info = None
         self.source_sequence += 1
         self.waveform.set_peaks(())
+        self.waveform.reset_view()
         self.probing = True
         self.path_label.configure(text=str(path))
         self.status.configure(text="Анализ аудиофайла…")
@@ -215,7 +244,38 @@ class AudioCoderApp(ctk.CTk):
         self.right_time.configure(text=clock(max(end, 0)))
         self.length_time.configure(text="Выделено: " + (clock(end - start) if end >= start else "—"))
         self.waveform.set_selection(start, end, self.info.duration)
-        self._refresh()
+        # Do not call _refresh() here: it reconfigures the range slider and
+        # previously slowed down every mouse-move during dragging.
+
+    def _on_waveform_view(self, zoom):
+        self.zoom_label.configure(text=f"×{zoom:.1f}")
+
+    def _waveform_edit(self, side, position, finished):
+        if self.info is None or self.probing or self.busy:
+            return
+        left, right = (float(x) for x in self.slider.get())
+        value = position * self.info.duration
+        min_gap = min(0.05, self.info.duration / 2)
+        if side == "left":
+            left = max(0.0, min(value, right - min_gap))
+        else:
+            right = min(self.info.duration, max(value, left + min_gap))
+        self.slider.set([left, right])
+        self._slider_moved(side)
+        if finished:
+            self._slider_released()
+
+    def on_fade_changed(self):
+        self.settings["fade_enabled"] = bool(self.fade_var.get())
+        self._update_fade_state()
+        self._save()
+
+    def on_fade_seconds(self, seconds):
+        self.settings["fade_seconds"] = float(seconds)
+        self._save()
+
+    def _update_fade_state(self):
+        self.fade_menu.configure(state="normal" if self.fade_var.get() else "disabled")
 
     def _cancel_preview(self):
         if self._preview_timer is not None:
@@ -241,10 +301,11 @@ class AudioCoderApp(ctk.CTk):
         if self.info is None or self.busy or self.probing:
             return
         self._cancel_preview()
-        self.player.stop()
-        self._playing = False
-        self.waveform.set_playhead(None)
-        self.play_button.configure(text="▶ Воспроизвести")
+        if self._playing:
+            self.player.stop()
+            self._playing = False
+            self.waveform.set_playhead(None)
+            self.play_button.configure(text="▶ Воспроизвести")
         self._last_drag_side = side
         # Don't restart FFplay for every pixel; play when the thumb rests.
         self._preview_timer = self.after(250, lambda: self._start_preview(side))
@@ -343,6 +404,9 @@ class AudioCoderApp(ctk.CTk):
         self.format_menu.configure(state="disabled" if self.busy else "normal")
         self.bitrate_menu.configure(
             state="normal" if not self.busy and self.settings["target_format"] == "MP3" else "disabled")
+        self.fade_checkbox.configure(state="disabled" if self.busy else "normal")
+        self.fade_menu.configure(
+            state="normal" if not self.busy and self.fade_var.get() else "disabled")
         self.slider.configure(state="normal" if self.info is not None and not self.busy and not self.probing else "disabled")
 
     def convert(self):
@@ -352,8 +416,11 @@ class AudioCoderApp(ctk.CTk):
             start, end = self.slider.get()
             clip = ClipRange(float(start), float(end), self.info.duration)
             destination = self._destination()
-            job = ConversionJob(self.info, destination, self.settings["target_format"],
-                                clip, self.settings["bitrate"])
+            job = ConversionJob(
+                self.info, destination, self.settings["target_format"],
+                clip, self.settings["bitrate"],
+                fade_enabled=self.settings["fade_enabled"],
+                fade_seconds=self.settings["fade_seconds"])
         except (ValueError, OSError) as exc:
             messagebox.showwarning("Параметры", str(exc))
             return
