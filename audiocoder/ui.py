@@ -417,7 +417,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.waveform.viewport.span = 1 / saved_zoom
             self.waveform.viewport.start = max(0.0, min(
                 saved_view_start, 1 - self.waveform.viewport.span))
-            self.waveform._view_changed()
+            self.waveform.redraw()
         self._sync_fade_overlay()
         self._on_waveform_view(self.waveform.viewport.zoom_level)
         self._loading_source = False
