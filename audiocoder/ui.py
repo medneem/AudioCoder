@@ -40,6 +40,7 @@ def short_waveform_time(seconds: float) -> str:
 
 
 class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
+    """Tk widgets and user actions; expensive decoding runs in workers."""
     def __init__(self):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
@@ -151,6 +152,37 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             command=self.waveform.reset_view
         ).grid(row=0, column=2, padx=(2, 10), pady=3)
 
+        self._build_codec_card(frame)
+        self._build_fade_card(frame)
+        self._build_folder_card(frame)
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        self.footer = footer
+        footer.grid(row=2, column=0, sticky="ew", padx=17, pady=(2, 8))
+        footer.grid_columnconfigure(0, weight=1)
+        self.status = ctk.CTkLabel(footer, text="Готов к работе", anchor="w")
+        self.status.grid(row=0, column=0, sticky="ew")
+        self.progress = ctk.CTkProgressBar(footer)
+        self.progress.grid(row=1, column=0, sticky="ew", pady=3)
+        self.progress.set(0)
+        buttons = ctk.CTkFrame(footer, fg_color="transparent")
+        buttons.grid(row=2, column=0, sticky="e")
+        self.play_button = ctk.CTkButton(
+            buttons, text="▶ Воспроизвести", width=155,
+            state="disabled", command=self.toggle_play)
+        self.play_button.pack(side="left", padx=(0, 10))
+        self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
+                                            fg_color="gray40", command=self.cancel)
+        self.cancel_button.pack(side="left", padx=(0, 10))
+        self.run_button = ctk.CTkButton(buttons, text="Конвертировать", width=170,
+                                         state="disabled", command=self.convert)
+        self.run_button.pack(side="left")
+        self._refresh()
+        self.body_font = apply_body_font(self, excluded=(self.main_heading,))
+        self._fit_editor_to_window()
+        self.after(100, self._poll)
+
+    def _build_codec_card(self, frame):
+        """Source encoding, bitrate, and optional variable-bitrate controls."""
         self.codec_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
@@ -187,6 +219,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.vbr_quality_menu.pack(side="left")
         self._update_audio_options()
 
+
+    def _build_fade_card(self, frame):
+        """Independent fade-in/out curves without inline help diagrams."""
         self.fade_card = ctk.CTkFrame(
             frame, fg_color=("#EEF4FF", "#26364F"), corner_radius=14,
             border_width=1, border_color=("#DAE7FA", "#455D7D"))
@@ -228,6 +263,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._update_fade_state()
         self._sync_fade_overlay()
 
+
+    def _build_folder_card(self, frame):
+        """Output directory picker; destination label lives in status only."""
         self.folder_card = ctk.CTkFrame(
             frame, fg_color=("#FFFFFF", "#273341"), corner_radius=14,
             border_width=1, border_color=("#E3E8F0", "#405065"))
@@ -242,31 +280,6 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.folder_card, text="📁 Изменить", width=136, height=30,
             command=self.choose_folder)
         self.folder_button.grid(row=0, column=2, padx=(0, 12), pady=6)
-        footer = ctk.CTkFrame(self, fg_color="transparent")
-        self.footer = footer
-        footer.grid(row=2, column=0, sticky="ew", padx=17, pady=(2, 8))
-        footer.grid_columnconfigure(0, weight=1)
-        self.status = ctk.CTkLabel(footer, text="Готов к работе", anchor="w")
-        self.status.grid(row=0, column=0, sticky="ew")
-        self.progress = ctk.CTkProgressBar(footer)
-        self.progress.grid(row=1, column=0, sticky="ew", pady=3)
-        self.progress.set(0)
-        buttons = ctk.CTkFrame(footer, fg_color="transparent")
-        buttons.grid(row=2, column=0, sticky="e")
-        self.play_button = ctk.CTkButton(
-            buttons, text="▶ Воспроизвести", width=155,
-            state="disabled", command=self.toggle_play)
-        self.play_button.pack(side="left", padx=(0, 10))
-        self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
-                                            fg_color="gray40", command=self.cancel)
-        self.cancel_button.pack(side="left", padx=(0, 10))
-        self.run_button = ctk.CTkButton(buttons, text="Конвертировать", width=170,
-                                         state="disabled", command=self.convert)
-        self.run_button.pack(side="left")
-        self._refresh()
-        self.body_font = apply_body_font(self, excluded=(self.main_heading,))
-        self._fit_editor_to_window()
-        self.after(100, self._poll)
 
     def _fit_editor_to_window(self):
         """Make the entire fixed editor visible rather than hiding its bottom.
