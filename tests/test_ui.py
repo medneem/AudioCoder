@@ -85,7 +85,7 @@ class UITests(unittest.TestCase):
                      self.window.folder_card):
             self.assertIsInstance(card, ctk.CTkFrame)
             self.assertEqual(card.winfo_manager(), "grid")
-        self.assertEqual(self.window.codec_card.cget("corner_radius"), 14)
+        self.assertEqual(self.window.codec_card.cget("corner_radius"), 12)
         self.assertEqual(self.window.fade_card.cget("fg_color"),
                          self.window.codec_card.cget("fg_color"))
         for widget in (
