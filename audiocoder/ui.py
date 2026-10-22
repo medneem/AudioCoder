@@ -13,11 +13,11 @@ from version import APP_VERSION
 from .converter import (BITRATES, FORMATS, ConversionCancelled,
                         ConversionJob, ConversionRunner, output_path)
 from .media import probe_audio
-from .player import AudioPlayer, listening_window
+from .player import AudioPlayer, PlaybackEffects, listening_window
 from .waveform import extract_waveform
 from .waveform_jobs import LatestOnlyWorker, WaveformDetailRequest
 from .waveform_view import WaveformView
-from .fade import FADE_CURVES
+from .fade import FADE_OPTIONS
 from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
@@ -257,20 +257,20 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         ).pack(fill="x", padx=17)
         curves = ctk.CTkFrame(self.fade_card, fg_color="transparent")
         curves.pack(fill="x", padx=12, pady=(5, 7))
-        curve_names = list(FADE_CURVES.values())
+        curve_names = list(FADE_OPTIONS.values())
         ctk.CTkLabel(curves, text="⌁", width=28).pack(side="left")
         ctk.CTkLabel(curves, text="Появление").pack(side="left", padx=(4, 8))
         self.fade_in_menu = ctk.CTkOptionMenu(
             curves, values=curve_names, width=175,
             command=lambda label: self.on_fade_curve("fade_in_curve", label))
-        self.fade_in_menu.set(FADE_CURVES[self.settings["fade_in_curve"]])
+        self.fade_in_menu.set(FADE_OPTIONS[self.settings["fade_in_curve"]])
         self.fade_in_menu.pack(side="left", padx=(0, 18))
         ctk.CTkLabel(curves, text="⌁", width=28).pack(side="left")
         ctk.CTkLabel(curves, text="Затухание").pack(side="left", padx=(4, 8))
         self.fade_out_menu = ctk.CTkOptionMenu(
             curves, values=curve_names, width=175,
             command=lambda label: self.on_fade_curve("fade_out_curve", label))
-        self.fade_out_menu.set(FADE_CURVES[self.settings["fade_out_curve"]])
+        self.fade_out_menu.set(FADE_OPTIONS[self.settings["fade_out_curve"]])
         self.fade_out_menu.pack(side="left")
         self._update_fade_state()
         self._sync_fade_overlay()
@@ -559,7 +559,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if parameter not in ("fade_in_curve", "fade_out_curve"):
             raise ValueError("Unknown fade parameter")
         self.settings[parameter] = next(
-            key for key, name in FADE_CURVES.items() if name == label)
+            key for key, name in FADE_OPTIONS.items() if name == label)
         self._sync_fade_overlay()
         self._save()
 
@@ -652,10 +652,17 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             window = listening_window(mode, clip.start, clip.end)
         except ValueError:
             return
+        effects = PlaybackEffects(
+            enabled=self.settings["fade_enabled"],
+            seconds=self.settings["fade_seconds"],
+            in_curve=self.settings["fade_in_curve"],
+            out_curve=self.settings["fade_out_curve"],
+            mode=mode)
         self.player.play(
             self.info.path, window,
             lambda generation, message: self.events.put(
-                ("play_error", (generation, message))))
+                ("play_error", (generation, message))),
+            effects=effects)
         self._playing = True
         self.waveform.set_playhead(window.start, self.info.duration)
         self.play_button.configure(text="■ Остановить")
