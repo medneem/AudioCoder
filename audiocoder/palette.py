@@ -9,10 +9,11 @@ WINDOW = ("#F3F5F6", "#1E262C")
 EDITOR = ("#E8ECEF", "#252F35")
 CARD = ("#FBFCFD", "#2B363D")
 CARD_BORDER = ("#D5DFE4", "#42515A")
-FADE_CARD = ("#EEF2F0", "#29383B")
-FADE_BORDER = ("#D3DEDA", "#455B59")
+# All setting cards share one surface in both themes.
+FADE_CARD = CARD
+FADE_BORDER = CARD_BORDER
 FADE_DIVIDER = ("#D9E3DF", "#435854")
-ZOOM_ROW = ("#F2F5F6", "#2A373E")
+ZOOM_ROW = CARD
 # Visual hierarchy: light text fields and secondary actions. The main
 # conversion button is the only deliberately emphasized filled action.
 BUTTON_SECONDARY = ("#E8F0F3", "#344A54")
