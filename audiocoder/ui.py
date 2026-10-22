@@ -286,13 +286,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.fade_checkbox = ctk.CTkCheckBox(
             fades, text="Плавное появление и затухание",
             variable=self.fade_var, command=self.on_fade_changed)
-        self.fade_checkbox.pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(fades, text="Длительность, с").pack(side="left", padx=(0, 8))
-        self.fade_menu = ctk.CTkOptionMenu(
-            fades, values=["0.5", "1.0", "2.0", "3.0", "5.0"], width=85,
-            command=self.on_fade_seconds)
-        self.fade_menu.set(str(self.settings["fade_seconds"]))
-        self.fade_menu.pack(side="left")
+        self.fade_checkbox.pack(side="left")
         ctk.CTkFrame(
             self.fade_card, height=1, corner_radius=0,
             fg_color=FADE_DIVIDER
@@ -306,14 +300,26 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             curves, values=curve_names, width=175,
             command=lambda label: self.on_fade_curve("fade_in_curve", label))
         self.fade_in_menu.set(FADE_OPTIONS[self.settings["fade_in_curve"]])
-        self.fade_in_menu.pack(side="left", padx=(0, 18))
+        self.fade_in_menu.pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(curves, text="с", width=18).pack(side="left", padx=(0, 3))
+        self.fade_in_seconds_menu = ctk.CTkOptionMenu(
+            curves, values=["0.5", "1.0", "2.0", "3.0", "5.0"], width=76,
+            command=lambda value: self.on_fade_seconds("fade_in_seconds", value))
+        self.fade_in_seconds_menu.set(str(self.settings["fade_in_seconds"]))
+        self.fade_in_seconds_menu.pack(side="left", padx=(0, 10))
         ctk.CTkLabel(curves, text="⌁", width=28).pack(side="left")
         ctk.CTkLabel(curves, text="Затухание").pack(side="left", padx=(4, 8))
         self.fade_out_menu = ctk.CTkOptionMenu(
             curves, values=curve_names, width=175,
             command=lambda label: self.on_fade_curve("fade_out_curve", label))
         self.fade_out_menu.set(FADE_OPTIONS[self.settings["fade_out_curve"]])
-        self.fade_out_menu.pack(side="left")
+        self.fade_out_menu.pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(curves, text="с", width=18).pack(side="left", padx=(0, 3))
+        self.fade_out_seconds_menu = ctk.CTkOptionMenu(
+            curves, values=["0.5", "1.0", "2.0", "3.0", "5.0"], width=76,
+            command=lambda value: self.on_fade_seconds("fade_out_seconds", value))
+        self.fade_out_seconds_menu.set(str(self.settings["fade_out_seconds"]))
+        self.fade_out_seconds_menu.pack(side="left")
         self._update_fade_state()
         self._sync_fade_overlay()
 
@@ -612,10 +618,14 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.settings["loop_selection"] = bool(self.loop_var.get())
         self._save()
 
-    def on_fade_seconds(self, seconds):
-        self.settings["fade_seconds"] = float(seconds)
+    def on_fade_seconds(self, parameter, seconds):
+        if parameter not in ("fade_in_seconds", "fade_out_seconds"):
+            raise ValueError("Unknown fade duration parameter")
+        self.settings[parameter] = float(seconds)
         self._sync_fade_overlay()
         self._save()
+        if self.settings["fade_enabled"]:
+            self._play_segment("left" if parameter == "fade_in_seconds" else "right")
 
     def on_fade_curve(self, parameter, label):
         if parameter not in ("fade_in_curve", "fade_out_curve"):
@@ -631,13 +641,15 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _sync_fade_overlay(self):
         duration = self.info.duration if self.info else 0.0
         self.waveform.set_fade(
-            self.settings["fade_enabled"], self.settings["fade_seconds"], duration,
-            self.settings["fade_in_curve"], self.settings["fade_out_curve"])
+            self.settings["fade_enabled"], self.settings["fade_in_seconds"], duration,
+            self.settings["fade_in_curve"], self.settings["fade_out_curve"],
+            out_seconds=self.settings["fade_out_seconds"])
 
     def _update_fade_state(self):
         enabled = self.fade_var.get() and not self.busy
         state = "normal" if enabled else "disabled"
-        self.fade_menu.configure(state=state)
+        self.fade_in_seconds_menu.configure(state=state)
+        self.fade_out_seconds_menu.configure(state=state)
         self.fade_in_menu.configure(state=state)
         self.fade_out_menu.configure(state=state)
 
@@ -731,7 +743,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             return
         effects = PlaybackEffects(
             enabled=self.settings["fade_enabled"],
-            seconds=self.settings["fade_seconds"],
+            seconds=self.settings["fade_in_seconds"],
+            out_seconds=self.settings["fade_out_seconds"],
             in_curve=fade_in,
             out_curve=self.settings["fade_out_curve"],
             mode=effect_mode)
@@ -861,7 +874,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 self.info, destination, self.settings["target_format"],
                 clip, self.settings["bitrate"],
                 fade_enabled=self.settings["fade_enabled"],
-                fade_seconds=self.settings["fade_seconds"],
+                fade_in_seconds=self.settings["fade_in_seconds"],
+                fade_out_seconds=self.settings["fade_out_seconds"],
                 fade_in_curve=self.settings["fade_in_curve"],
                 fade_out_curve=self.settings["fade_out_curve"],
                 vbr_enabled=self.settings["vbr_enabled"],

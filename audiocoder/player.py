@@ -44,6 +44,7 @@ class PlaybackEffects:
     """Optional FFmpeg audio filters for auditioning the actual fades."""
     enabled: bool = False
     seconds: float = 1.0
+    out_seconds: float | None = None
     in_curve: str = "log"
     out_curve: str = "log"
     mode: str = "selection"
@@ -59,7 +60,7 @@ def ffplay_command(source: Path, window: PlaybackWindow, binary: Path,
     if effects is not None and effects.enabled:
         filters = fade_filtergraph(
             window.duration, effects.seconds, effects.in_curve,
-            effects.out_curve, mode=effects.mode)
+            effects.out_curve, mode=effects.mode, out_seconds=effects.out_seconds)
         if filters:
             # FFplay preserves the original PTS after -ss. afade uses
             # timestamp-relative st=0, so without resetting PTS the fade-in

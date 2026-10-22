@@ -44,7 +44,9 @@ class ConversionJob:
     clip: ClipRange
     bitrate: str = "192k"
     fade_enabled: bool = False
-    fade_seconds: float = 1.0
+    fade_seconds: float | None = None  # Legacy API; sets both durations when provided.
+    fade_in_seconds: float = 1.0
+    fade_out_seconds: float = 1.0
     fade_in_curve: str = "log"
     fade_out_curve: str = "log"
     vbr_enabled: bool = False
@@ -57,8 +59,12 @@ class ConversionJob:
             raise ValueError("Неподдерживаемый битрейт.")
         if type(self.fade_enabled) is not bool:
             raise ValueError("Некорректный переключатель затухания.")
-        if type(self.fade_seconds) not in (int, float) or not math.isfinite(self.fade_seconds) or not 0.1 <= self.fade_seconds <= 20:
-            raise ValueError("Длительность затухания должна быть от 0,1 до 20 секунд.")
+        for value in (self.fade_in_seconds, self.fade_out_seconds, self.fade_seconds):
+            if value is None:
+                continue
+            if (type(value) not in (int, float) or not math.isfinite(value)
+                    or not 0.1 <= value <= 20):
+                raise ValueError("Длительность затухания должна быть от 0,1 до 20 секунд.")
         if self.fade_in_curve not in FADE_OPTIONS or self.fade_out_curve not in FADE_OPTIONS:
             raise ValueError("Неподдерживаемый алгоритм появления или затухания.")
         if type(self.vbr_enabled) is not bool:
@@ -92,9 +98,11 @@ def ffmpeg_command(job: ConversionJob, destination: Path, ffmpeg: Path) -> list[
         "Opus": ["-c:a", "libopus", "-b:a", job.bitrate, "-vbr", "on" if job.vbr_enabled else "off", "-compression_level", "10"],
     }
     if job.fade_enabled:
+        seconds_in = job.fade_seconds if job.fade_seconds is not None else job.fade_in_seconds
+        seconds_out = job.fade_seconds if job.fade_seconds is not None else job.fade_out_seconds
         filters = fade_filtergraph(
-            job.clip.length, job.fade_seconds,
-            job.fade_in_curve, job.fade_out_curve)
+            job.clip.length, seconds_in, job.fade_in_curve,
+            job.fade_out_curve, out_seconds=seconds_out)
         if filters:
             cmd.extend(["-af", filters])
     return cmd + codecs[job.target_format] + ["-n", str(destination)]

@@ -9,7 +9,7 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 from .waveform_navigation import WaveformViewport, clamp
-from .fade import fade_gain
+from .fade import fade_gain, effective_fade_durations
 from .palette import (FADE_GUIDE, PLAYHEAD, WAVE_ACTIVE, WAVE_BACKGROUND,
                       WAVE_INACTIVE, WAVE_SELECTION, theme_color)
 
@@ -104,6 +104,7 @@ class WaveformView(tk.Canvas):
         self.corner_radius = 14
         self.fade_enabled = False
         self.fade_fraction = 0.0
+        self.fade_out_fraction = 0.0
         self.fade_in_curve = "log"
         self.fade_out_curve = "log"
         self.viewport = WaveformViewport()
@@ -166,9 +167,12 @@ class WaveformView(tk.Canvas):
             self.redraw()
 
     def set_fade(self, enabled: bool, seconds: float, duration: float,
-                 curve_in: str = "log", curve_out: str = "log"):
+                 curve_in: str = "log", curve_out: str = "log",
+                 *, out_seconds: float | None = None):
         self.fade_enabled = bool(enabled)
         self.fade_fraction = max(0.0, seconds / duration) if duration > 0 else 0.0
+        self.fade_out_fraction = (max(0.0, (seconds if out_seconds is None else out_seconds)
+                                      / duration) if duration > 0 else 0.0)
         self.fade_in_curve = curve_in
         self.fade_out_curve = curve_out
         self.redraw()
@@ -278,28 +282,31 @@ class WaveformView(tk.Canvas):
         for x in (x1, x2):
             if 0 <= x < w:
                 draw.line((x, 0, x, h), fill=active, width=1)
-        if self.fade_enabled and self.fade_fraction > 0:
+        if self.fade_enabled and (self.fade_fraction > 0 or self.fade_out_fraction > 0):
             # Subtle warm waveform guides distinguish fades from the audio.
             # They are visual only; the same afade curve is applied at export.
             length = max(0.0, self.selection[1] - self.selection[0])
-            fade_frac = min(self.fade_fraction, length / 2)
-            if fade_frac > 0:
+            in_span, out_span = effective_fade_durations(
+                max(length, 1e-12), max(self.fade_fraction, 1e-12),
+                max(self.fade_out_fraction, 1e-12),
+                self.fade_in_curve, self.fade_out_curve)
+            if in_span > 0 or out_span > 0:
                 top, bottom = 9, h - 9
                 fade_colour = theme_color(FADE_GUIDE, dark=dark)
-                for begin, end, direction, curve in (
-                    (self.selection[0], self.selection[0] + fade_frac,
-                     "in", self.fade_in_curve),
-                    (self.selection[1] - fade_frac, self.selection[1],
-                     "out", self.fade_out_curve),
+                for begin, end, direction, curve, span in (
+                    (self.selection[0], self.selection[0] + in_span,
+                     "in", self.fade_in_curve, in_span),
+                    (self.selection[1] - out_span, self.selection[1],
+                     "out", self.fade_out_curve, out_span),
                 ):
-                    if curve == "none":
+                    if curve == "none" or span <= 0:
                         continue
                     points = []
                     for x in range(w):
                         position = self.viewport.position_at(x, w)
                         if not begin <= position <= end:
                             continue
-                        progress = (position - begin) / fade_frac
+                        progress = (position - begin) / span
                         if direction == "out":
                             progress = 1 - progress
                         gain = fade_gain(curve, progress)

@@ -70,7 +70,8 @@ class UITests(unittest.TestCase):
         self.assertEqual(tuple(self.window.fade_card.cget("border_color")), FADE_BORDER)
         for menu in (self.window.format_menu, self.window.bitrate_menu,
                      self.window.fade_in_menu, self.window.fade_out_menu,
-                     self.window.fade_menu, self.window.appearance_menu):
+                     self.window.fade_in_seconds_menu, self.window.fade_out_seconds_menu,
+                     self.window.appearance_menu):
             self.assertEqual(tuple(menu.cget("fg_color")), MENU_BG)
             self.assertEqual(tuple(menu.cget("text_color")), MENU_TEXT)
         self.assertEqual(tuple(self.window.progress.cget("progress_color")), ACCENT)
@@ -91,8 +92,8 @@ class UITests(unittest.TestCase):
         for widget in (
             self.window.format_menu, self.window.bitrate_menu,
             self.window.vbr_checkbox, self.window.fade_checkbox,
-            self.window.fade_menu, self.window.fade_in_menu,
-            self.window.fade_out_menu, self.window.folder_button,
+            self.window.fade_in_seconds_menu, self.window.fade_out_seconds_menu,
+            self.window.fade_in_menu, self.window.fade_out_menu, self.window.folder_button,
             self.window.help_button, self.window.open_button,
         ):
             font = widget.cget("font")
@@ -358,12 +359,16 @@ class UITests(unittest.TestCase):
 
     def test_fade_option_and_output_configuration(self):
         self.window.fade_var.set(True)
-        with patch("audiocoder.ui.save_settings"):
+        with patch("audiocoder.ui.save_settings"), \
+             patch.object(self.window, "_play_segment"):
             self.window.on_fade_changed()
-            self.window.on_fade_seconds("2.0")
+            self.window.on_fade_seconds("fade_in_seconds", "2.0")
+            self.window.on_fade_seconds("fade_out_seconds", "3.0")
         self.assertTrue(self.window.settings["fade_enabled"])
-        self.assertEqual(self.window.settings["fade_seconds"], 2.0)
-        self.assertEqual(self.window.fade_menu.cget("state"), "normal")
+        self.assertEqual(self.window.settings["fade_in_seconds"], 2.0)
+        self.assertEqual(self.window.settings["fade_out_seconds"], 3.0)
+        self.assertEqual(self.window.fade_in_seconds_menu.cget("state"), "normal")
+        self.assertEqual(self.window.fade_out_seconds_menu.cget("state"), "normal")
         self.assertTrue(self.window.waveform.fade_enabled)
 
     def test_real_canvas_paints_with_tk_named_gray86_background(self):
