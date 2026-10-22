@@ -16,6 +16,37 @@ FADE_CURVES = {
     "ipar": "Обратная парабола",
 }
 
+# Keep real FFmpeg curve IDs separate from the UI-only "no effect" option.
+# The help gallery covers only actual mathematical curves.
+FADE_OPTIONS = {"none": "Нет", **FADE_CURVES}
+
+
+def fade_filtergraph(duration: float, seconds: float, curve_in: str,
+                     curve_out: str, *, mode: str = "selection") -> str | None:
+    """Build the same FFmpeg afade chain for export and FFplay previews.
+
+    Full selection: symmetrical, non-overlapping fades. Left/right marker
+    snippets: only the corresponding edge is processed; the short preview
+    uses its own duration, since it starts a fresh FFplay timeline.
+    """
+    if mode not in ("selection", "left", "right"):
+        raise ValueError("Неизвестный режим предпрослушивания.")
+    if (not math.isfinite(duration) or duration <= 0
+            or not math.isfinite(seconds) or seconds <= 0):
+        raise ValueError("Некорректная длительность появления или затухания.")
+    if curve_in not in FADE_OPTIONS or curve_out not in FADE_OPTIONS:
+        raise ValueError("Неподдерживаемый алгоритм появления или затухания.")
+    effective = min(seconds, duration / 2 if mode == "selection" else duration)
+    filters = []
+    if mode != "right" and curve_in != "none":
+        filters.append(f"afade=t=in:st=0:d={effective:.6f}:curve={curve_in}")
+    if mode != "left" and curve_out != "none":
+        start = max(0.0, duration - effective)
+        filters.append(
+            f"afade=t=out:st={start:.6f}:d={effective:.6f}:curve={curve_out}")
+    return ",".join(filters) if filters else None
+
+
 def fade_gain(curve: str, progress: float) -> float:
     """Gain from silence (0) to unity (1); right fade reverses progress."""
     if curve not in FADE_CURVES:
