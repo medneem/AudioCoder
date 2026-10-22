@@ -69,6 +69,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self._detail_failed)
         self._last_drag_side = None
         self._playing = False
+        self._play_mode = None
+        self._cursor_position = None
         self._save_timer = None
         self._loading_source = False
         self._help_window = None
@@ -158,6 +160,20 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             zoom_row, text="↻ Сброс", width=86, height=28,
             command=self.waveform.reset_view
         ).grid(row=0, column=2, padx=(2, 10), pady=3)
+        zoom_actions = ctk.CTkFrame(zoom_row, fg_color="transparent")
+        zoom_actions.grid(row=1, column=0, columnspan=3, sticky="e", padx=10, pady=(0, 4))
+        self.zoom_out_button = ctk.CTkButton(
+            zoom_actions, text="−", width=36, height=26,
+            command=self.waveform.zoom_out)
+        self.zoom_out_button.pack(side="left", padx=(0, 5))
+        self.zoom_in_button = ctk.CTkButton(
+            zoom_actions, text="+", width=36, height=26,
+            command=self.waveform.zoom_in)
+        self.zoom_in_button.pack(side="left", padx=(0, 5))
+        self.fit_selection_button = ctk.CTkButton(
+            zoom_actions, text="Показать выделение", width=175, height=26,
+            command=self.waveform.fit_selection)
+        self.fit_selection_button.pack(side="left")
 
         self._build_codec_card(frame)
         self._build_fade_card(frame)
@@ -171,8 +187,31 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.progress = ctk.CTkProgressBar(footer)
         self.progress.grid(row=1, column=0, sticky="ew", pady=3)
         self.progress.set(0)
+        transport = ctk.CTkFrame(footer, fg_color="transparent")
+        transport.grid(row=2, column=0, sticky="ew", pady=(1, 3))
+        self.seek_left_button = ctk.CTkButton(
+            transport, text="|◀", width=48, height=28,
+            command=lambda: self._seek_to_marker("left"))
+        self.seek_left_button.pack(side="left", padx=(0, 5))
+        self.seek_back_button = ctk.CTkButton(
+            transport, text="◀ −1 с", width=80, height=28,
+            command=lambda: self._step_cursor(-1.0))
+        self.seek_back_button.pack(side="left", padx=(0, 5))
+        self.seek_forward_button = ctk.CTkButton(
+            transport, text="+1 с ▶", width=80, height=28,
+            command=lambda: self._step_cursor(1.0))
+        self.seek_forward_button.pack(side="left", padx=(0, 5))
+        self.seek_right_button = ctk.CTkButton(
+            transport, text="▶|", width=48, height=28,
+            command=lambda: self._seek_to_marker("right"))
+        self.seek_right_button.pack(side="left")
+        self.loop_var = ctk.BooleanVar(value=self.settings["loop_selection"])
+        self.loop_checkbox = ctk.CTkCheckBox(
+            transport, text="Повторять фрагмент",
+            variable=self.loop_var, command=self.on_loop_changed)
+        self.loop_checkbox.pack(side="right")
         buttons = ctk.CTkFrame(footer, fg_color="transparent")
-        buttons.grid(row=2, column=0, sticky="e")
+        buttons.grid(row=3, column=0, sticky="e")
         self.play_button = ctk.CTkButton(
             buttons, text="▶ Воспроизвести", width=155,
             state="disabled", command=self.toggle_play)
@@ -410,6 +449,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _loaded(self, info):
         self.probing = False
         self.info = info
+        self._cursor_position = None
         self._loading_source = True
         same_source = self.settings["last_source_path"] == str(info.path)
         saved_start = self.settings["clip_start"]
@@ -509,6 +549,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.waveform.set_selection(start, end, self.info.duration)
         self.settings["clip_start"] = start
         self.settings["clip_end"] = end
+        if self._cursor_position is not None and not start <= self._cursor_position <= end:
+            self._cursor_position = None
         self._schedule_save()
         # Do not call _refresh() here: it reconfigures the range slider and
         # previously slowed down every mouse-move during dragging.
@@ -550,6 +592,10 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._sync_fade_overlay()
         self._save()
 
+    def on_loop_changed(self):
+        self.settings["loop_selection"] = bool(self.loop_var.get())
+        self._save()
+
     def on_fade_seconds(self, seconds):
         self.settings["fade_seconds"] = float(seconds)
         self._sync_fade_overlay()
@@ -562,6 +608,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             key for key, name in FADE_OPTIONS.items() if name == label)
         self._sync_fade_overlay()
         self._save()
+        if self.settings["fade_enabled"]:
+            # Rewind the corresponding preview on every curve change.
+            self._play_segment("left" if parameter == "fade_in_curve" else "right")
 
     def _sync_fade_overlay(self):
         duration = self.info.duration if self.info else 0.0
@@ -606,6 +655,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._last_drag_side = None
         self.player.stop()
         self._playing = False
+        self._play_mode = None
         self.waveform.set_playhead(None)
         self.play_button.configure(text="▶ Воспроизвести")
 
@@ -620,10 +670,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if self.info is None or self.busy or self.probing:
             return
         self._cancel_preview()
+        self._cursor_position = None
+        self.waveform.set_playhead(None)
         if self._playing:
             self.player.stop()
             self._playing = False
-            self.waveform.set_playhead(None)
+            self._play_mode = None
             self.play_button.configure(text="▶ Воспроизвести")
         self._last_drag_side = side
         # Don't restart FFplay for every pixel; play when the thumb rests.
@@ -643,30 +695,76 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if pending:
             self._play_segment(side)
 
-    def _play_segment(self, mode):
+    def _play_segment(self, mode, *, start_at=None):
         if self.info is None or self.busy or self.probing:
             return
         try:
             left, right = self.slider.get()
             clip = ClipRange(float(left), float(right), self.info.duration)
             window = listening_window(mode, clip.start, clip.end)
+            fade_in = self.settings["fade_in_curve"]
+            effect_mode = mode
+            if mode == "selection" and start_at is not None:
+                seek = float(start_at)
+                if clip.start < seek < clip.end - .05:
+                    window = type(window)(seek, clip.end)
+                    # A seek into the middle must not replay the left fade.
+                    fade_in = "none"
+                    effect_mode = "right"
         except ValueError:
             return
         effects = PlaybackEffects(
             enabled=self.settings["fade_enabled"],
             seconds=self.settings["fade_seconds"],
-            in_curve=self.settings["fade_in_curve"],
+            in_curve=fade_in,
             out_curve=self.settings["fade_out_curve"],
-            mode=mode)
+            mode=effect_mode)
         self.player.play(
             self.info.path, window,
             lambda generation, message: self.events.put(
                 ("play_error", (generation, message))),
             effects=effects)
         self._playing = True
+        self._play_mode = mode
+        if mode == "selection":
+            self._cursor_position = window.start
         self.waveform.set_playhead(window.start, self.info.duration)
         self.play_button.configure(text="■ Остановить")
         self.status.configure(text="Прослушивание…")
+
+    def _seek_cursor(self, position):
+        """Move the playback cursor without changing the marked clip."""
+        if self.info is None or self.busy or self.probing:
+            return
+        left, right = (float(v) for v in self.slider.get())
+        position = max(left, min(right, float(position)))
+        self._cancel_preview()
+        self._last_drag_side = None
+        self._cursor_position = position
+        if self._playing:
+            if position < right - .05:
+                self._play_segment("selection", start_at=position)
+            else:
+                self._stop_playback()
+                self.waveform.set_playhead(position, self.info.duration)
+        else:
+            self.waveform.set_playhead(position, self.info.duration)
+        self.status.configure(text=f"Курсор: {clock(position)}")
+
+    def _seek_to_marker(self, side):
+        if self.info is None or side not in ("left", "right"):
+            return
+        left, right = self.slider.get()
+        self._seek_cursor(left if side == "left" else right)
+
+    def _step_cursor(self, seconds):
+        if self.info is None:
+            return
+        current = self.player.position() if self._playing else None
+        if current is None:
+            current = (self._cursor_position if self._cursor_position is not None
+                       else float(self.slider.get()[0]))
+        self._seek_cursor(current + seconds)
 
     def toggle_play(self):
         if self._playing or self._preview_timer is not None:
@@ -675,7 +773,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         else:
             self._cancel_preview()
             self._last_drag_side = None
-            self._play_segment("selection")
+            at = None if self.settings["loop_selection"] else self._cursor_position
+            self._play_segment("selection", start_at=at)
 
     def on_format(self, value):
         self.settings["target_format"] = value
@@ -724,6 +823,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 enabled = False
         self.run_button.configure(state="normal" if enabled else "disabled")
         self.play_button.configure(state="normal" if enabled else "disabled")
+        for button in (self.seek_left_button, self.seek_back_button,
+                       self.seek_forward_button, self.seek_right_button,
+                       self.zoom_in_button, self.zoom_out_button,
+                       self.fit_selection_button):
+            button.configure(state="normal" if enabled else "disabled")
+        self.loop_checkbox.configure(state="disabled" if self.busy else "normal")
         self.open_button.configure(state="disabled" if self.busy or self.probing else "normal")
         self.folder_button.configure(state="disabled" if self.busy else "normal")
         self.format_menu.configure(state="disabled" if self.busy else "normal")
@@ -844,9 +949,17 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if self._playing:
             position = self.player.position()
             if position is None:
-                self._playing = False
-                self.waveform.set_playhead(None)
-                self.play_button.configure(text="▶ Воспроизвести")
+                if (self._play_mode == "selection" and not self.busy
+                        and self.settings["loop_selection"]
+                        and self.player.last_returncode == 0):
+                    # Marker previews are never repeated; only a successfully
+                    # completed whole selection starts again at the left edge.
+                    self._play_segment("selection")
+                else:
+                    self._playing = False
+                    self._play_mode = None
+                    self.waveform.set_playhead(None)
+                    self.play_button.configure(text="▶ Воспроизвести")
             elif self.info is not None:
                 self.waveform.set_playhead(position, self.info.duration)
         self.after(25 if not self.events.empty() else 100, self._poll)
