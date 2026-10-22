@@ -127,8 +127,8 @@ class PlaybackTests(unittest.TestCase):
                 encoding="utf-8", errors="replace", timeout=10,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             self.assertEqual(result.returncode, 0, result.stderr[-1200:])
-            self.assertRegex(result.stderr, r"n:0 pts:0 pts_time:0\\b")
-            rms = re.search(r"RMS level dB:\\s*([-\\d.]+)", result.stderr)
+            self.assertRegex(result.stderr, r"n:0 pts:0 pts_time:0\b")
+            rms = re.search(r"RMS level dB:\s*([-\d.]+)", result.stderr)
             self.assertIsNotNone(rms, result.stderr[-1600:])
             self.assertGreater(float(rms.group(1)), -55,
                                "Seeked right preview was silent")
