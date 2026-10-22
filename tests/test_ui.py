@@ -294,7 +294,7 @@ class UITests(unittest.TestCase):
                 self.window._left_moved(20)
                 self.assertIsNotNone(self.window._preview_timer)
                 self.window._slider_released()
-                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 25))
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
                 self.window._right_moved(80)
                 self.window._slider_released()
                 self.assertEqual(play.call_args.args[1], PlaybackWindow(79, 80))
@@ -593,6 +593,74 @@ class UITests(unittest.TestCase):
         self.assertEqual(self.window.bitrate_menu.cget("state"), "normal")
 
 
+
+    def test_loop_left_marker_preview_repeats_until_stopped(self):
+        from audiocoder.player import PlaybackWindow
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Повтор.flac"
+            path.touch()
+            with patch("audiocoder.ui.save_settings"), \
+                 patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(path, 120.0, "flac", 44100, 2))
+            self.window.slider.set([20, 80])
+            self.window.on_range(self.window.slider.get())
+            self.window.settings["loop_selection"] = True
+            with patch.object(self.window.player, "play", return_value=7) as play, \
+                 patch.object(self.window.player, "position", return_value=None), \
+                 patch.object(self.window.player, "last_returncode", 0), \
+                 patch.object(self.window, "after"):
+                self.window._play_segment("left")
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
+                self.assertEqual(play.call_args.kwargs["effects"].mode, "left")
+                self.window._poll()
+                self.assertEqual(play.call_count, 2)
+                self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
+            self.window.settings["loop_selection"] = False
+            self.window._stop_playback()
+
+    def test_navigation_buttons_autoplay_from_stopped_state(self):
+        from audiocoder.player import PlaybackWindow
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Кнопки.flac"
+            path.touch()
+            with patch("audiocoder.ui.save_settings"), \
+                 patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(path, 100.0, "flac", 44100, 2))
+                self.window.slider.set([10.0, 20.0])
+                self.window.on_range(self.window.slider.get())
+                with patch.object(self.window.player, "play", return_value=10) as play, \
+                     patch.object(self.window.player, "position", return_value=None):
+                    self.window._stop_playback()
+                    self.window.seek_left_button.invoke()
+                    self.assertEqual(play.call_args.args[1], PlaybackWindow(10, 20))
+                    self.assertEqual(self.window._play_mode, "selection")
+                    self.window._stop_playback()
+                    self.window.seek_forward_button.invoke()
+                    self.assertEqual(play.call_args.args[1], PlaybackWindow(11, 20))
+                    self.window._stop_playback()
+                    self.window.seek_back_button.invoke()
+                    self.assertEqual(play.call_args.args[1], PlaybackWindow(10, 20))
+                    self.window._stop_playback()
+                    self.window.seek_right_button.invoke()
+                    self.assertEqual(play.call_args.args[1], PlaybackWindow(19, 20))
+                    self.assertEqual(play.call_args.kwargs["effects"].mode, "right")
+            self.window._stop_playback()
+
+    def test_restore_last_edit_file_on_startup_if_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Последний файл.flac"
+            path.touch()
+            self.window.settings["last_source_path"] = str(path)
+            with patch.object(self.window, "open_file") as open_file:
+                self.window._restore_last_source()
+                open_file.assert_called_once_with(path)
+                open_file.reset_mock()
+                path.unlink()
+                self.window._restore_last_source()
+                open_file.assert_not_called()
+                self.assertIn("не найден", self.window.status.cget("text").lower())
+            self.window.settings["last_source_path"] = ""
+
     def test_loop_checkbox_persists_and_only_selection_repeats(self):
         self.window.loop_var.set(True)
         with patch("audiocoder.ui.save_settings") as save:
@@ -632,7 +700,7 @@ class UITests(unittest.TestCase):
                 self.window.on_fade_changed()
                 with patch.object(self.window.player, "play", return_value=42) as play:
                     self.window.on_fade_curve("fade_in_curve", "Линейный")
-                    self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 25))
+                    self.assertEqual(play.call_args.args[1], PlaybackWindow(20, 80))
                     self.assertEqual(play.call_args.kwargs["effects"].mode, "left")
                     self.window.on_fade_curve("fade_out_curve", "Кубический")
                     self.assertEqual(play.call_args.args[1], PlaybackWindow(79, 80))
