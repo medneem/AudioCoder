@@ -821,7 +821,7 @@ class UITests(unittest.TestCase):
         self.assertEqual(image.size, (64, 64))
         self.assertEqual(image.mode, "RGBA")
         self.assertNotEqual(image.getpixel((32, 32))[3], 0)
-        with patch("audiocoder.ui.ImageTk.PhotoImage", wraps=ImageTk.PhotoImage) as photo, \\
+        with patch("audiocoder.ui.ImageTk.PhotoImage", wraps=ImageTk.PhotoImage) as photo, \
              patch.object(self.window, "iconphoto") as iconphoto:
             self.window._set_window_icon()
             self.assertEqual(photo.call_count, 2)
