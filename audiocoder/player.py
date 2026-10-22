@@ -61,7 +61,10 @@ def ffplay_command(source: Path, window: PlaybackWindow, binary: Path,
             window.duration, effects.seconds, effects.in_curve,
             effects.out_curve, mode=effects.mode)
         if filters:
-            cmd.extend(["-af", filters])
+            # FFplay preserves the original PTS after -ss. afade uses
+            # timestamp-relative st=0, so without resetting PTS the fade-in
+            # never triggers and right-marker fade-out outputs silence.
+            cmd.extend(["-af", "asetpts=PTS-STARTPTS," + filters])
     return cmd + [str(source)]
 
 
