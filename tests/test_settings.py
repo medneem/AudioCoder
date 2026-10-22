@@ -92,5 +92,15 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "config.json").read_text(encoding="utf-8")), DEFAULTS)
 
 
+    def test_selection_repeat_defaults_roundtrip_and_validation(self):
+        self.assertIs(DEFAULTS["loop_selection"], False)
+        saved = {**DEFAULTS, "loop_selection": True}
+        save_settings(saved, self.root)
+        self.assertTrue(load_settings(self.root)["loop_selection"])
+        for value in (None, 1, "true"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                save_settings({**DEFAULTS, "loop_selection": value}, self.root)
+
+
 if __name__ == "__main__":
     unittest.main()
