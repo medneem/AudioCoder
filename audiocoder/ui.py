@@ -25,7 +25,8 @@ from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
 from .explorer import reveal_output_file
 from .app_icon import create_icon_image, icon_file_path
-from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
+from .ui_style import (FONT_FAMILY, TITLE_SIZE, apply_body_font,
+                       configure_control_rendering)
 from .palette import (BUTTON_PRIMARY, BUTTON_PRIMARY_HOVER,
                       BUTTON_PRIMARY_TEXT, BUTTON_PRIMARY_BORDER,
                       CARD, CARD_BORDER, CANCEL_BG, CANCEL_HOVER, CANCEL_TEXT,
@@ -37,6 +38,7 @@ from .settings import DEFAULTS, load_settings, save_settings
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme(str(theme_path()))
+configure_control_rendering()
 
 
 def short_waveform_time(seconds: float) -> str:

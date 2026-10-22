@@ -129,6 +129,37 @@ class UITests(unittest.TestCase):
                 self.assertEqual(button.cget("border_width"), 2)
                 self.assertEqual(button.cget("corner_radius"), 6)
 
+    def test_buttons_checkboxes_and_cards_use_symmetric_polygon_borders(self):
+        """Regression: font-based CTk corner glyphs look uneven on Windows."""
+        import customtkinter as ctk
+
+        self.assertEqual(ctk.DrawEngine.preferred_drawing_method, "polygon_shapes")
+        controls = (
+            self.window.help_button, self.window.open_button,
+            self.window.folder_button, self.window.play_button,
+            self.window.cancel_button, self.window.run_button,
+            self.window.vbr_checkbox, self.window.fade_checkbox,
+            self.window.loop_checkbox, self.window.codec_card,
+            self.window.fade_card, self.window.folder_card,
+            self.window.zoom_label.master,
+        )
+        for widget in controls:
+            with self.subTest(widget=str(widget)):
+                canvas = widget._canvas
+                self.assertTrue(canvas.find_withtag("border_line_1"),
+                                f"{widget} must draw a polygon, not AA font corners")
+                self.assertFalse(canvas.find_withtag("border_oval_1_a"))
+                # CTkCanvas.coords() discards the return value. Read via
+                # Tk Canvas directly to inspect the real polygon coordinates.
+                import tkinter
+                coords = tkinter.Canvas.coords(canvas, "border_line_1")
+                self.assertEqual(len(coords), 8)
+                left, top, right, _, _, bottom, _, _ = coords
+                self.assertEqual(coords, [left, top, right, top,
+                                          right, bottom, left, bottom])
+                self.assertGreater(right, left)
+                self.assertGreater(bottom, top)
+
     def test_switching_themes_keeps_cards_uniform(self):
         for appearance in ("Тёмная", "Светлая"):
             with self.subTest(appearance=appearance), patch("audiocoder.ui.save_settings"):
