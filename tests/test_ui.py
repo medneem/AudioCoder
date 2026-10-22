@@ -778,12 +778,15 @@ class UITests(unittest.TestCase):
             sequence = []
             with patch.object(self.window, "_show_message") as show, \
                  patch("audiocoder.ui.reveal_output_file") as reveal:
-                show.return_value.get.side_effect = lambda: sequence.append("closed")
+                show.return_value.get.side_effect = lambda: (
+                    sequence.append("closed") or "Открыть папку")
                 reveal.side_effect = lambda path: sequence.append("explorer")
                 self.window._poll()
                 show.assert_called_once()
                 args, kwargs = show.call_args
                 self.assertEqual(kwargs["icon"], "check")
+                self.assertEqual(kwargs["option_1"], "Хорошо")
+                self.assertEqual(kwargs["option_2"], "Открыть папку")
                 self.assertIn(result.name, args[1])
                 show.return_value.get.assert_called_once_with()
                 reveal.assert_called_once_with(result)
@@ -791,6 +794,42 @@ class UITests(unittest.TestCase):
             self.assertFalse(self.window.busy)
             self.assertEqual(self.window.progress.get(), 1)
             self.assertIn(result.name, self.window.status.cget("text"))
+
+    def test_success_dialog_good_or_close_does_not_open_folder(self):
+        from unittest.mock import Mock
+        for response in ("Хорошо", None):
+            with self.subTest(response=response), tempfile.TemporaryDirectory() as tmp:
+                result = Path(tmp) / "Результат.wav"
+                result.touch()
+                self.window.busy = True
+                self.window.runner = Mock()
+                self.window.events.put(("finished", result))
+                with patch.object(self.window, "_show_message") as show, \\
+                     patch("audiocoder.ui.reveal_output_file") as reveal:
+                    show.return_value.get.return_value = response
+                    self.window._poll()
+                    show.assert_called_once()
+                    show.return_value.get.assert_called_once_with()
+                    reveal.assert_not_called()
+                    self.assertFalse(self.window.busy)
+                    self.assertIn(result.name, self.window.status.cget("text"))
+
+    def test_app_window_icon_is_set_from_bundled_artwork(self):
+        from PIL import ImageTk
+        from audiocoder.app_icon import create_icon_image
+        image = create_icon_image(64)
+        self.assertEqual(image.size, (64, 64))
+        self.assertEqual(image.mode, "RGBA")
+        self.assertNotEqual(image.getpixel((32, 32))[3], 0)
+        with patch("audiocoder.ui.ImageTk.PhotoImage", wraps=ImageTk.PhotoImage) as photo, \\
+             patch.object(self.window, "iconphoto") as iconphoto:
+            self.window._set_window_icon()
+            self.assertEqual(photo.call_count, 2)
+            iconphoto.assert_called_once()
+            self.assertTrue(iconphoto.call_args.args[0])
+            self.assertEqual(len(iconphoto.call_args.args), 3)
+            self.assertIsNotNone(self.window._window_icon_large)
+            self.assertIsNotNone(self.window._window_icon_small)
 
     def test_conversion_cancel_or_error_never_opens_explorer_or_reports_success(self):
         from unittest.mock import Mock
