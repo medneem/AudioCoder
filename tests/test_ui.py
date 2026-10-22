@@ -338,6 +338,24 @@ class UITests(unittest.TestCase):
                 self.assertEqual(effects.out_curve, "cub")
                 self.window._stop_playback()
 
+    def test_waveform_handles_independent_no_fades_without_draw_errors(self):
+        self.window.deiconify()
+        try:
+            self.window.update()
+            self.window.waveform.set_peaks((.1, .5, .2, .8) * 100)
+            self.window.waveform.set_selection(0, 10, 10)
+            for fade_in, fade_out in (("none", "log"), ("qsin", "none"),
+                                      ("none", "none")):
+                with self.subTest(curves=(fade_in, fade_out)):
+                    self.window.waveform.set_fade(
+                        True, 1.0, 10, fade_in, fade_out)
+                    self.window.waveform._paint()
+                    self.assertIsNotNone(self.window.waveform._image)
+                    self.assertTrue(self.window.waveform.itemcget(
+                        self.window.waveform._image_item, "image"))
+        finally:
+            self.window.withdraw()
+
     def test_fade_option_and_output_configuration(self):
         self.window.fade_var.set(True)
         with patch("audiocoder.ui.save_settings"):
