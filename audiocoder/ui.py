@@ -1,11 +1,12 @@
 """The CustomTkinter presentation layer; no FFmpeg work on the UI thread."""
 
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import queue
 import threading
 
 import customtkinter as ctk
+from CTkMessagebox import CTkMessagebox
 from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from vendor.CTkRangeSlider import CTkRangeSlider
 
@@ -20,6 +21,7 @@ from .waveform_view import WaveformView
 from .fade import FADE_OPTIONS
 from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
+from .explorer import reveal_output_file
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
 from .palette import (BUTTON_PRIMARY, BUTTON_PRIMARY_HOVER,
                       BUTTON_PRIMARY_TEXT, BUTTON_PRIMARY_BORDER,
@@ -78,7 +80,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.settings = load_settings()
         except (ValueError, OSError) as exc:
             self.settings = DEFAULTS.copy()
-            self.after(50, lambda error=str(exc): messagebox.showwarning("Настройки", error))
+            self.after(50, lambda error=str(exc): self._show_message("Настройки", error, icon="warning"))
         ctk.set_appearance_mode(self.settings["appearance"])
 
         self.grid_columnconfigure(0, weight=1)
@@ -354,6 +356,19 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         # the output folder card when the redundant result row is absent.
         self.geometry(f"920x{minimum}")
 
+    def _show_message(self, title, message, *, icon="info", option_1="ОК"):
+        """One CustomTkinter-styled message dialog for app notifications."""
+        dark = ctk.get_appearance_mode() == "Dark"
+        return CTkMessagebox(
+            master=self, title=title, message=str(message),
+            icon=icon, option_1=option_1, width=470, height=210,
+            border_color=theme_color(CARD_BORDER, dark=dark),
+            button_color=theme_color(BUTTON_PRIMARY, dark=dark),
+            button_hover_color=theme_color(BUTTON_PRIMARY_HOVER, dark=dark),
+            button_text_color=theme_color(BUTTON_PRIMARY_TEXT, dark=dark),
+            wraplength=350,
+        )
+
     def _save(self):
         if self._save_timer is not None:
             self.after_cancel(self._save_timer)
@@ -361,7 +376,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         try:
             save_settings(self.settings)
         except OSError as exc:
-            messagebox.showwarning("Настройки", str(exc))
+            self._show_message("Настройки", str(exc), icon="warning")
 
     def _schedule_save(self):
         # Never rewrite config.json on every mouse move / scroll event.
@@ -417,7 +432,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         try:
             path = dropped_audio_path(event.data, self.tk.splitlist)
         except ValueError as exc:
-            messagebox.showwarning("Аудиофайл", str(exc), parent=self)
+            self._show_message("Аудиофайл", str(exc), icon="warning")
             return REFUSE_DROP
         self.open_file(path)
         return COPY
@@ -881,7 +896,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 vbr_enabled=self.settings["vbr_enabled"],
                 vbr_quality=self.settings["vbr_quality"])
         except (ValueError, OSError) as exc:
-            messagebox.showwarning("Параметры", str(exc))
+            self._show_message("Параметры", str(exc), icon="warning")
             return
         self._stop_playback()
         self.runner = ConversionRunner()
@@ -926,7 +941,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                     self.probing = False
                     self.status.configure(text="Ошибка открытия файла")
                     self._refresh()
-                    messagebox.showerror("Аудиофайл", data)
+                    self._show_message("Аудиофайл", data, icon="cancel")
                 elif kind == "waveform":
                     sequence, peaks = data
                     if sequence == self.source_sequence and self.info is not None:
@@ -955,7 +970,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                     if generation == self.player.generation:
                         self._stop_playback()
                         self.status.configure(text="Ошибка воспроизведения")
-                        messagebox.showerror("Воспроизведение", message)
+                        self._show_message("Воспроизведение", message, icon="cancel")
                 elif kind == "progress":
                     self.progress.set(data)
                     self.status.configure(text=f"Конвертация: {data * 100:.1f}%")
@@ -963,6 +978,19 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                     self._end()
                     self.progress.set(1)
                     self.status.configure(text=f"Готово: {data.name}")
+                    # Open Explorer after acknowledgement, so the modal remains
+                    # visible and Explorer receives focus rather than hiding.
+                    self._show_message(
+                        "Конвертация завершена",
+                        f"Файл успешно сохранён:\n{data}",
+                        icon="check", option_1="Открыть папку").get()
+                    try:
+                        reveal_output_file(data)
+                    except OSError as exc:
+                        self._show_message(
+                            "Файл сохранён",
+                            f"Не удалось открыть папку результата:\n{exc}",
+                            icon="warning")
                 elif kind == "cancelled":
                     self._end()
                     self.progress.set(0)
@@ -970,7 +998,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 elif kind == "convert_error":
                     self._end()
                     self.status.configure(text="Ошибка конвертации")
-                    messagebox.showerror("Конвертация", data)
+                    self._show_message("Конвертация", data, icon="cancel")
         except queue.Empty:
             pass
         if self._playing:
