@@ -17,7 +17,8 @@ DEFAULTS = {
     "appearance": "Light",
     "fade_enabled": False,
     "loop_selection": False,
-    "fade_seconds": 1.0,
+    "fade_in_seconds": 1.0,
+    "fade_out_seconds": 1.0,
     "fade_in_curve": "log",
     "fade_out_curve": "log",
     "vbr_enabled": False,
@@ -40,6 +41,15 @@ def validate(config: dict) -> dict:
     if not isinstance(config, dict):
         raise ValueError("config.json должен содержать JSON-объект.")
     settings = {**DEFAULTS, **config}
+    # Old config.json used one shared duration. Keep user settings on upgrade.
+    if "fade_seconds" in config:
+        legacy = config["fade_seconds"]
+        if (type(legacy) not in (int, float) or not math.isfinite(legacy)
+                or not 0.1 <= legacy <= 20):
+            raise ValueError("fade_seconds должен быть числом от 0.1 до 20.")
+        for key in ("fade_in_seconds", "fade_out_seconds"):
+            if key not in config:
+                settings[key] = legacy
     if any(not isinstance(settings[key], str) for key in ("last_source_dir", "output_dir", "target_format", "bitrate", "appearance", "last_source_path")):
         raise ValueError("Параметры config.json должны быть строками.")
     if settings["target_format"] not in FORMATS or settings["bitrate"] not in BITRATES:
@@ -50,15 +60,18 @@ def validate(config: dict) -> dict:
         raise ValueError("fade_enabled должен быть логическим значением.")
     if type(settings["loop_selection"]) is not bool:
         raise ValueError("loop_selection должен быть true/false.")
-    if type(settings["fade_seconds"]) not in (int, float) or not (0.1 <= settings["fade_seconds"] <= 20):
-        raise ValueError("fade_seconds должен быть числом от 0.1 до 20.")
+    for name in ("fade_in_seconds", "fade_out_seconds"):
+        value = settings[name]
+        if (type(value) not in (int, float) or not math.isfinite(value)
+                or not 0.1 <= value <= 20):
+            raise ValueError(f"{name} должен быть числом от 0.1 до 20.")
     if settings["fade_in_curve"] not in FADE_OPTIONS or settings["fade_out_curve"] not in FADE_OPTIONS:
         raise ValueError("Неизвестный алгоритм fade в config.json.")
     if type(settings["vbr_enabled"]) is not bool:
         raise ValueError("vbr_enabled должен быть true/false.")
     if type(settings["vbr_quality"]) is not int or not 0 <= settings["vbr_quality"] <= 9:
         raise ValueError("vbr_quality должен быть от 0 до 9.")
-    for name in ("clip_start", "clip_end", "waveform_zoom", "waveform_start", "fade_seconds"):
+    for name in ("clip_start", "clip_end", "waveform_zoom", "waveform_start", "fade_in_seconds", "fade_out_seconds"):
         value = settings[name]
         if type(value) not in (int, float) or not math.isfinite(value):
             raise ValueError(f"{name} должен быть конечным числом.")
