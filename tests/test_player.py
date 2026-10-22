@@ -260,5 +260,33 @@ class PlayerTransportTests(unittest.TestCase):
         self.assertTrue(procs[1].killed)
 
 
+    def test_player_exposes_success_or_failure_on_natural_exit(self):
+        player = AudioPlayer()
+        processes = [DummyProcess(), DummyProcess()]
+        launched = threading.Event()
+        def popen(*args, **kwargs):
+            result = processes.pop(0)
+            launched.set()
+            return result
+        first = processes[0]
+        second = processes[1]
+        with patch("audiocoder.player.find_binary", return_value=Path("ffplay")), \
+             patch("audiocoder.player.subprocess.Popen", side_effect=popen):
+            player.play(Path("song.flac"), PlaybackWindow(0, 2))
+            self.assertTrue(launched.wait(2))
+            first.returncode = 1
+            self.assertIsNone(player.position())
+            self.assertEqual(player.last_returncode, 1)
+            launched.clear()
+            player.play(Path("song.flac"), PlaybackWindow(0, 2))
+            self.assertTrue(launched.wait(2))
+            self.assertIsNone(player.last_returncode)
+            second.returncode = 0
+            self.assertIsNone(player.position())
+            self.assertEqual(player.last_returncode, 0)
+            player.stop()
+            self.assertIsNone(player.last_returncode)
+
+
 if __name__ == "__main__":
     unittest.main()

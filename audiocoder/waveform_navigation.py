@@ -34,6 +34,14 @@ class WaveformViewport:
         self.span = clamp(self.span / factor, 1.0 / MAX_ZOOM, 1.0)
         self.start = clamp(focal - self.span * anchor, 0.0, 1.0 - self.span)
 
+    def fit_range(self, left: float, right: float) -> None:
+        """Show a complete normalized selection, with padding where possible."""
+        left = clamp(left, 0.0, 1.0)
+        right = clamp(right, left, 1.0)
+        span = clamp((right - left) * 1.12, 1.0 / MAX_ZOOM, 1.0)
+        self.span = span
+        self.start = clamp((left + right - span) / 2.0, 0.0, 1.0 - span)
+
     def pan(self, dx_pixels: float, width: int) -> None:
         if width <= 0:
             return

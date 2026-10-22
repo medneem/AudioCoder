@@ -16,6 +16,7 @@ DEFAULTS = {
     "bitrate": "192k",
     "appearance": "Light",
     "fade_enabled": False,
+    "loop_selection": False,
     "fade_seconds": 1.0,
     "fade_in_curve": "log",
     "fade_out_curve": "log",
@@ -47,6 +48,8 @@ def validate(config: dict) -> dict:
         raise ValueError("Некорректная тема в config.json.")
     if type(settings["fade_enabled"]) is not bool:
         raise ValueError("fade_enabled должен быть логическим значением.")
+    if type(settings["loop_selection"]) is not bool:
+        raise ValueError("loop_selection должен быть true/false.")
     if type(settings["fade_seconds"]) not in (int, float) or not (0.1 <= settings["fade_seconds"] <= 20):
         raise ValueError("fade_seconds должен быть числом от 0.1 до 20.")
     if settings["fade_in_curve"] not in FADE_OPTIONS or settings["fade_out_curve"] not in FADE_OPTIONS:
