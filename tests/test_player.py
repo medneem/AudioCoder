@@ -18,8 +18,8 @@ class PlaybackTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.assertEqual(listening_window(mode, 80, 190), PlaybackWindow(80, 190))
 
-    def test_left_previews_five_seconds_from_left_marker(self):
-        self.assertEqual(listening_window("left", 80, 190), PlaybackWindow(80, 85))
+    def test_left_previews_entire_selection_from_left_marker(self):
+        self.assertEqual(listening_window("left", 80, 190), PlaybackWindow(80, 190))
         self.assertEqual(listening_window("left", 80, 83), PlaybackWindow(80, 83))
         self.assertEqual(listening_window("selection", 80, 190), PlaybackWindow(80, 190))
 

@@ -231,6 +231,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.body_font = apply_body_font(self, excluded=(self.main_heading,))
         self._fit_editor_to_window()
         self.after(100, self._poll)
+        # Restore the last edited audio after the window has initialized.
+        if self.settings["last_source_path"]:
+            self.after(0, self._restore_last_source)
 
     def _build_codec_card(self, frame):
         """Source encoding, bitrate, and optional variable-bitrate controls."""
@@ -423,6 +426,19 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                        ("Все файлы", "*.*")])
         if name:
             self.open_file(Path(name))
+
+    def _restore_last_source(self):
+        """Attempt to reopen the last session without blocking startup."""
+        if self.closing or self.info is not None or self.probing or self.busy:
+            return
+        stored = self.settings["last_source_path"]
+        if not stored:
+            return
+        path = Path(stored)
+        if not path.is_file():
+            self.status.configure(text=f"Последний файл не найден: {path}")
+            return
+        self.open_file(path)
 
     def open_file(self, path: Path):
         if self.busy or self.probing:
@@ -733,7 +749,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.status.configure(text="Прослушивание…")
 
     def _seek_cursor(self, position):
-        """Move the playback cursor without changing the marked clip."""
+        """Seek and start playback immediately, including from a stopped state."""
         if self.info is None or self.busy or self.probing:
             return
         left, right = (float(v) for v in self.slider.get())
@@ -741,15 +757,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._cancel_preview()
         self._last_drag_side = None
         self._cursor_position = position
-        if self._playing:
-            if position < right - .05:
-                self._play_segment("selection", start_at=position)
-            else:
-                self._stop_playback()
-                self.waveform.set_playhead(position, self.info.duration)
+        if position >= right - .05:
+            # Nothing remains after the right marker: audition its final second.
+            self._play_segment("right")
         else:
-            self.waveform.set_playhead(position, self.info.duration)
-        self.status.configure(text=f"Курсор: {clock(position)}")
+            self._play_segment("selection", start_at=position)
+
 
     def _seek_to_marker(self, side):
         if self.info is None or side not in ("left", "right"):
@@ -949,12 +962,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if self._playing:
             position = self.player.position()
             if position is None:
-                if (self._play_mode == "selection" and not self.busy
+                if (self._play_mode in ("selection", "left") and not self.busy
                         and self.settings["loop_selection"]
                         and self.player.last_returncode == 0):
-                    # Marker previews are never repeated; only a successfully
-                    # completed whole selection starts again at the left edge.
-                    self._play_segment("selection")
+                    # Repeat long playback from the left boundary; short
+                    # right-edge previews are never looped.
+                    self._play_segment(self._play_mode)
                 else:
                     self._playing = False
                     self._play_mode = None
