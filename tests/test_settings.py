@@ -57,7 +57,8 @@ class SettingsTests(unittest.TestCase):
         values = {**DEFAULTS,
                   "target_format": "MP3", "bitrate": "320k",
                   "vbr_enabled": True, "vbr_quality": 0,
-                  "fade_enabled": True, "fade_seconds": 3.0,
+                  "fade_enabled": True, "fade_in_seconds": 2.0,
+                  "fade_out_seconds": 3.0,
                   "fade_in_curve": "qsin", "fade_out_curve": "cub",
                   "last_source_path": "D:/Music/Song.flac",
                   "clip_start": 1.25, "clip_end": 51.7,
@@ -74,6 +75,8 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(values["fade_enabled"])
         self.assertEqual(values["bitrate"], DEFAULTS["bitrate"])
         self.assertEqual(values["fade_in_curve"], "log")
+        self.assertEqual(values["fade_in_seconds"], 1.0)
+        self.assertEqual(values["fade_out_seconds"], 1.0)
         self.assertEqual(values["vbr_enabled"], False)
         self.assertEqual(values["waveform_zoom"], 1)
 
