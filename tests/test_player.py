@@ -119,6 +119,29 @@ class PlayerTransportTests(unittest.TestCase):
         self.assertTrue(spawned[0].killed)
         self.assertIsNone(player.position())
 
+    def test_transport_launches_ffplay_with_the_selected_fade_filters(self):
+        player = AudioPlayer()
+        launched = threading.Event()
+        commands = []
+
+        def spawn(command, **kwargs):
+            commands.append(command)
+            launched.set()
+            return DummyProcess()
+
+        effects = PlaybackEffects(enabled=True, seconds=.5,
+                                  in_curve="none", out_curve="hsin")
+        with patch("audiocoder.player.find_binary", return_value=Path("ffplay")), \
+             patch("audiocoder.player.subprocess.Popen", side_effect=spawn):
+            player.play(Path("song.flac"), PlaybackWindow(4, 8),
+                        effects=effects)
+            self.assertTrue(launched.wait(3), "FFplay did not launch")
+            player.stop()
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0][commands[0].index("-af") + 1],
+                         "afade=t=out:st=3.500000:d=0.500000:curve=hsin")
+        self.assertNotIn("t=in", commands[0][commands[0].index("-af") + 1])
+
     def test_stale_launch_is_cancelled(self):
         player = AudioPlayer()
         entered = threading.Event()
