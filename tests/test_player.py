@@ -4,7 +4,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from audiocoder.player import AudioPlayer, PlaybackWindow, ffplay_command, listening_window
+from audiocoder.player import AudioPlayer, PlaybackWindow, PlaybackEffects, ffplay_command, listening_window
 
 
 class PlaybackTests(unittest.TestCase):
@@ -30,6 +30,50 @@ class PlaybackTests(unittest.TestCase):
                      ("right", float("nan"), 5), ("other", 0, 10)):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 listening_window(*args)
+
+    def test_selected_preview_uses_same_fade_filter_as_export(self):
+        from audiocoder.fade import fade_filtergraph
+        effects = PlaybackEffects(
+            enabled=True, seconds=1.0, in_curve="qsin", out_curve="cub")
+        window = PlaybackWindow(12, 22)
+        cmd = ffplay_command(Path("Музыка.flac"), window, Path("ffplay"), effects)
+        self.assertIn("-af", cmd)
+        self.assertEqual(cmd[cmd.index("-af") + 1],
+                         fade_filtergraph(10, 1, "qsin", "cub"))
+        self.assertIn("afade=t=in:st=0:d=1.000000:curve=qsin",
+                      cmd[cmd.index("-af") + 1])
+        self.assertIn("afade=t=out:st=9.000000:d=1.000000:curve=cub",
+                      cmd[cmd.index("-af") + 1])
+
+    def test_marker_previews_apply_only_matching_boundary(self):
+        for mode, window, expected, absent in (
+            ("left", PlaybackWindow(20, 25), "t=in", "t=out"),
+            ("right", PlaybackWindow(24, 25), "t=out", "t=in"),
+        ):
+            with self.subTest(mode=mode):
+                effects = PlaybackEffects(
+                    enabled=True, seconds=1, in_curve="tri",
+                    out_curve="log", mode=mode)
+                cmd = ffplay_command(Path("song.flac"), window, Path("ffplay"), effects)
+                fade = cmd[cmd.index("-af") + 1]
+                self.assertIn(expected, fade)
+                self.assertNotIn(absent, fade)
+
+    def test_disabled_or_none_fades_are_absent_in_preview(self):
+        win = PlaybackWindow(0, 5)
+        source, exe = Path("source.flac"), Path("ffplay")
+        for effects in (
+            PlaybackEffects(enabled=False),
+            PlaybackEffects(enabled=True, in_curve="none", out_curve="none"),
+        ):
+            with self.subTest(effects=effects):
+                self.assertNotIn("-af", ffplay_command(source, win, exe, effects))
+        for curve in ("in_curve", "out_curve"):
+            settings = dict(enabled=True, in_curve="log", out_curve="cub")
+            settings[curve] = "none"
+            cmd = ffplay_command(source, win, exe, PlaybackEffects(**settings))
+            filters = cmd[cmd.index("-af") + 1]
+            self.assertEqual(filters.count("afade="), 1)
 
     def test_ffplay_command(self):
         cmd = ffplay_command(Path("Музыка.flac"), PlaybackWindow(189, 190), Path("ffplay"))
