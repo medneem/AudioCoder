@@ -2,3 +2,4 @@
 customtkinter==5.2.2
 pillow>=11,<13
 tkinterdnd2==0.4.3
+CTkMessagebox==2.7
