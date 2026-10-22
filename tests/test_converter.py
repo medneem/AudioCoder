@@ -71,6 +71,25 @@ class ConverterTests(unittest.TestCase):
                              "on" if enabled else "off")
             self.assertEqual(cmd[cmd.index("-b:a") + 1], "256k")
 
+    def test_none_fade_selection_creates_only_requested_filters(self):
+        for fade_in, fade_out, count, wanted in (
+            ("none", "cub", 1, "t=out"),
+            ("qsin", "none", 1, "t=in"),
+            ("none", "none", 0, ""),
+        ):
+            with self.subTest(curves=(fade_in, fade_out)):
+                job = ConversionJob(
+                    self.info, self.destination, "MP3", ClipRange(0, 10, 10),
+                    fade_enabled=True, fade_in_curve=fade_in,
+                    fade_out_curve=fade_out)
+                command = ffmpeg_command(job, self.destination, Path("ffmpeg"))
+                if count:
+                    self.assertIn("-af", command)
+                    self.assertEqual(command[command.index("-af") + 1].count("afade="), count)
+                    self.assertIn(wanted, command[command.index("-af") + 1])
+                else:
+                    self.assertNotIn("-af", command)
+
     def test_different_fade_in_and_fade_out_curves(self):
         job = ConversionJob(
             self.info, self.destination, "MP3", ClipRange(0, 10, 10),

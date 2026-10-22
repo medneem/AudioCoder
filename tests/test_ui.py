@@ -311,6 +311,51 @@ class UITests(unittest.TestCase):
             self.assertEqual(loaded["target_format"], "MP3")
             self.assertEqual(loaded["bitrate"], "320k")
 
+    def test_none_curve_first_and_applied_to_player_preview(self):
+        from audiocoder.fade import FADE_OPTIONS
+        from audiocoder.player import PlaybackEffects
+        self.assertEqual(next(iter(FADE_OPTIONS.items())), ("none", "Нет"))
+        self.assertEqual(self.window.fade_in_menu.cget("values")[0], "Нет")
+        self.assertEqual(self.window.fade_out_menu.cget("values")[0], "Нет")
+        self.window.fade_var.set(True)
+        with patch("audiocoder.ui.save_settings"):
+            self.window.on_fade_changed()
+            self.window.on_fade_curve("fade_in_curve", "Нет")
+            self.window.on_fade_curve("fade_out_curve", "Кубический")
+        self.assertEqual(self.window.settings["fade_in_curve"], "none")
+        self.assertEqual(self.window.settings["fade_out_curve"], "cub")
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "test.flac"
+            path.touch()
+            with patch.object(self.window, "_start_waveform"):
+                self.window._loaded(AudioInfo(path, 100.0, "flac", 44100, 2))
+            with patch.object(self.window.player, "play", return_value=9) as play:
+                self.window._play_segment("selection")
+                effects = play.call_args.kwargs["effects"]
+                self.assertIsInstance(effects, PlaybackEffects)
+                self.assertTrue(effects.enabled)
+                self.assertEqual(effects.in_curve, "none")
+                self.assertEqual(effects.out_curve, "cub")
+                self.window._stop_playback()
+
+    def test_waveform_handles_independent_no_fades_without_draw_errors(self):
+        self.window.deiconify()
+        try:
+            self.window.update()
+            self.window.waveform.set_peaks((.1, .5, .2, .8) * 100)
+            self.window.waveform.set_selection(0, 10, 10)
+            for fade_in, fade_out in (("none", "log"), ("qsin", "none"),
+                                      ("none", "none")):
+                with self.subTest(curves=(fade_in, fade_out)):
+                    self.window.waveform.set_fade(
+                        True, 1.0, 10, fade_in, fade_out)
+                    self.window.waveform._paint()
+                    self.assertIsNotNone(self.window.waveform._image)
+                    self.assertTrue(self.window.waveform.itemcget(
+                        self.window.waveform._image_item, "image"))
+        finally:
+            self.window.withdraw()
+
     def test_fade_option_and_output_configuration(self):
         self.window.fade_var.set(True)
         with patch("audiocoder.ui.save_settings"):

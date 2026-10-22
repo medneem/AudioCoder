@@ -11,7 +11,7 @@ from typing import Callable
 
 from .media import AudioInfo, find_binary
 from .selection import ClipRange
-from .fade import FADE_CURVES
+from .fade import FADE_OPTIONS, fade_filtergraph
 
 
 FORMATS = ("FLAC", "MP3", "WAV", "Opus")
@@ -59,7 +59,7 @@ class ConversionJob:
             raise ValueError("Некорректный переключатель затухания.")
         if type(self.fade_seconds) not in (int, float) or not math.isfinite(self.fade_seconds) or not 0.1 <= self.fade_seconds <= 20:
             raise ValueError("Длительность затухания должна быть от 0,1 до 20 секунд.")
-        if self.fade_in_curve not in FADE_CURVES or self.fade_out_curve not in FADE_CURVES:
+        if self.fade_in_curve not in FADE_OPTIONS or self.fade_out_curve not in FADE_OPTIONS:
             raise ValueError("Неподдерживаемый алгоритм появления или затухания.")
         if type(self.vbr_enabled) is not bool:
             raise ValueError("VBR должен быть логическим значением.")
@@ -92,16 +92,11 @@ def ffmpeg_command(job: ConversionJob, destination: Path, ffmpeg: Path) -> list[
         "Opus": ["-c:a", "libopus", "-b:a", job.bitrate, "-vbr", "on" if job.vbr_enabled else "off", "-compression_level", "10"],
     }
     if job.fade_enabled:
-        # Use logarithmic fades on the trimmed output timeline.
-        # Short excerpts use symmetrical, non-overlapping fades.
-        length = job.clip.length
-        fade = min(job.fade_seconds, length / 2)
-        start_out = max(0.0, length - fade)
-        filters = (
-            f"afade=t=in:st=0:d={fade:.6f}:curve={job.fade_in_curve},"
-            f"afade=t=out:st={start_out:.6f}:d={fade:.6f}:curve={job.fade_out_curve}"
-        )
-        cmd.extend(["-af", filters])
+        filters = fade_filtergraph(
+            job.clip.length, job.fade_seconds,
+            job.fade_in_curve, job.fade_out_curve)
+        if filters:
+            cmd.extend(["-af", filters])
     return cmd + codecs[job.target_format] + ["-n", str(destination)]
 
 

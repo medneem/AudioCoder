@@ -280,6 +280,8 @@ class WaveformView(tk.Canvas):
                     (self.selection[1] - fade_frac, self.selection[1],
                      "out", self.fade_out_curve),
                 ):
+                    if curve == "none":
+                        continue
                     points = []
                     for x in range(w):
                         position = self.viewport.position_at(x, w)

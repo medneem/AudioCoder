@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 from .converter import FORMATS, BITRATES
-from .fade import FADE_CURVES
+from .fade import FADE_OPTIONS
 
 
 DEFAULTS = {
@@ -49,7 +49,7 @@ def validate(config: dict) -> dict:
         raise ValueError("fade_enabled должен быть логическим значением.")
     if type(settings["fade_seconds"]) not in (int, float) or not (0.1 <= settings["fade_seconds"] <= 20):
         raise ValueError("fade_seconds должен быть числом от 0.1 до 20.")
-    if settings["fade_in_curve"] not in FADE_CURVES or settings["fade_out_curve"] not in FADE_CURVES:
+    if settings["fade_in_curve"] not in FADE_OPTIONS or settings["fade_out_curve"] not in FADE_OPTIONS:
         raise ValueError("Неизвестный алгоритм fade в config.json.")
     if type(settings["vbr_enabled"]) is not bool:
         raise ValueError("vbr_enabled должен быть true/false.")

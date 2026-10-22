@@ -8,6 +8,7 @@ import time
 from typing import Callable
 
 from .media import find_binary
+from .fade import fade_filtergraph
 
 
 @dataclass(frozen=True)
@@ -38,13 +39,30 @@ def listening_window(mode: str, left: float, right: float) -> PlaybackWindow:
     return PlaybackWindow(left, right)
 
 
-def ffplay_command(source: Path, window: PlaybackWindow, binary: Path) -> list[str]:
-    return [
+@dataclass(frozen=True)
+class PlaybackEffects:
+    """Optional FFmpeg audio filters for auditioning the actual fades."""
+    enabled: bool = False
+    seconds: float = 1.0
+    in_curve: str = "log"
+    out_curve: str = "log"
+    mode: str = "selection"
+
+
+def ffplay_command(source: Path, window: PlaybackWindow, binary: Path,
+                   effects: PlaybackEffects | None = None) -> list[str]:
+    cmd = [
         str(binary), "-hide_banner", "-loglevel", "error", "-nostats",
         "-nodisp", "-autoexit", "-vn", "-sn",
         "-ss", f"{window.start:.6f}", "-t", f"{window.duration:.6f}",
-        str(source),
     ]
+    if effects is not None and effects.enabled:
+        filters = fade_filtergraph(
+            window.duration, effects.seconds, effects.in_curve,
+            effects.out_curve, mode=effects.mode)
+        if filters:
+            cmd.extend(["-af", filters])
+    return cmd + [str(source)]
 
 
 @dataclass
@@ -74,7 +92,8 @@ class AudioPlayer:
                 process.kill()
 
     def play(self, source: Path, window: PlaybackWindow,
-             on_error: Callable[[int, str], None] | None = None) -> int:
+             on_error: Callable[[int, str], None] | None = None, *,
+             effects: PlaybackEffects | None = None) -> int:
         with self._lock:
             self._generation += 1
             generation = self._generation
@@ -86,15 +105,15 @@ class AudioPlayer:
             self._pending = True
             self._started_at = None
         threading.Thread(
-            target=self._launch, args=(generation, Path(source), window, on_error),
+            target=self._launch, args=(generation, Path(source), window, effects, on_error),
             daemon=True,
         ).start()
         return generation
 
-    def _launch(self, generation, source, window, on_error):
+    def _launch(self, generation, source, window, effects, on_error):
         try:
             binary = find_binary("ffplay")
-            command = ffplay_command(source, window, binary)
+            command = ffplay_command(source, window, binary, effects)
             with self._lock:
                 if generation != self._generation:
                     return

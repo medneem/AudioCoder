@@ -44,6 +44,15 @@ class SettingsTests(unittest.TestCase):
             with self.subTest(value=invalid), self.assertRaises(ValueError):
                 save_settings(values, self.root)
 
+    def test_none_curve_ids_roundtrip_config_and_legacy_curves_survive(self):
+        for fade_in, fade_out in (("none", "none"),
+                                 ("none", "log"), ("qsin", "none")):
+            values = {**DEFAULTS, "fade_enabled": True,
+                      "fade_in_curve": fade_in, "fade_out_curve": fade_out}
+            with self.subTest(curves=(fade_in, fade_out)):
+                save_settings(values, self.root)
+                self.assertEqual(load_settings(self.root), values)
+
     def test_new_options_survive_restart(self):
         values = {**DEFAULTS,
                   "target_format": "MP3", "bitrate": "320k",
