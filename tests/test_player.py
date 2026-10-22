@@ -1,5 +1,10 @@
 """Unit tests of FFplay seek boundaries, CLI and asynchronous transport."""
 from pathlib import Path
+import os
+import re
+import shutil
+import subprocess
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
@@ -38,8 +43,9 @@ class PlaybackTests(unittest.TestCase):
         window = PlaybackWindow(12, 22)
         cmd = ffplay_command(Path("Музыка.flac"), window, Path("ffplay"), effects)
         self.assertIn("-af", cmd)
-        self.assertEqual(cmd[cmd.index("-af") + 1],
-                         fade_filtergraph(10, 1, "qsin", "cub"))
+        self.assertEqual(
+            cmd[cmd.index("-af") + 1],
+            "asetpts=PTS-STARTPTS," + fade_filtergraph(10, 1, "qsin", "cub"))
         self.assertIn("afade=t=in:st=0:d=1.000000:curve=qsin",
                       cmd[cmd.index("-af") + 1])
         self.assertIn("afade=t=out:st=9.000000:d=1.000000:curve=cub",
@@ -74,6 +80,59 @@ class PlaybackTests(unittest.TestCase):
             cmd = ffplay_command(source, win, exe, PlaybackEffects(**settings))
             filters = cmd[cmd.index("-af") + 1]
             self.assertEqual(filters.count("afade="), 1)
+
+    def test_seeking_requires_zero_based_audio_timestamps_for_fades(self):
+        """FFplay retains source PTS after -ss; without asetpts right preview is mute."""
+        for mode, window in (
+            ("selection", PlaybackWindow(80, 100)),
+            ("left", PlaybackWindow(80, 85)),
+            ("right", PlaybackWindow(99, 100)),
+        ):
+            with self.subTest(mode=mode):
+                effects = PlaybackEffects(
+                    enabled=True, seconds=1, in_curve="log",
+                    out_curve="log", mode=mode)
+                command = ffplay_command(Path("song.flac"), window,
+                                         Path("ffplay"), effects)
+                self.assertIn("-af", command)
+                graph = command[command.index("-af") + 1]
+                self.assertTrue(
+                    graph.startswith("asetpts=PTS-STARTPTS,"),
+                    f"Seeked {mode} preview keeps nonzero timestamps: {graph}")
+                self.assertEqual(command[command.index("-ss") + 1],
+                                 f"{window.start:.6f}")
+                self.assertEqual(command[command.index("-t") + 1],
+                                 f"{window.duration:.6f}")
+
+    @unittest.skipUnless(shutil.which("ffplay") and shutil.which("ffmpeg"),
+                         "FFplay and FFmpeg required for live audio regression")
+    def test_real_ffplay_right_preview_is_audible_after_nonzero_seek(self):
+        """Output after a seek must not be -inf dB (all samples silenced)."""
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "Проверка-затухания.wav"
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=7",
+                "-c:a", "pcm_s16le", "-y", str(source),
+            ], capture_output=True, check=True, timeout=15)
+            cmd = ffplay_command(
+                source, PlaybackWindow(5, 6), Path(shutil.which("ffplay")),
+                PlaybackEffects(enabled=True, seconds=1,
+                                in_curve="log", out_curve="log", mode="right"))
+            cmd[cmd.index("-loglevel") + 1] = "info"
+            cmd[cmd.index("-af") + 1] += ",ashowinfo,astats=metadata=1:reset=0"
+            env = {**os.environ, "SDL_AUDIODRIVER": "dummy",
+                   "SDL_VIDEODRIVER": "dummy"}
+            result = subprocess.run(
+                cmd, env=env, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=10,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self.assertEqual(result.returncode, 0, result.stderr[-1200:])
+            self.assertRegex(result.stderr, r"n:0 pts:0 pts_time:0\b")
+            rms = re.search(r"RMS level dB:\s*([-\d.]+)", result.stderr)
+            self.assertIsNotNone(rms, result.stderr[-1600:])
+            self.assertGreater(float(rms.group(1)), -55,
+                               "Seeked right preview was silent")
 
     def test_ffplay_command(self):
         cmd = ffplay_command(Path("Музыка.flac"), PlaybackWindow(189, 190), Path("ffplay"))
@@ -138,8 +197,9 @@ class PlayerTransportTests(unittest.TestCase):
             self.assertTrue(launched.wait(3), "FFplay did not launch")
             player.stop()
         self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0][commands[0].index("-af") + 1],
-                         "afade=t=out:st=3.500000:d=0.500000:curve=hsin")
+        self.assertEqual(
+            commands[0][commands[0].index("-af") + 1],
+            "asetpts=PTS-STARTPTS,afade=t=out:st=3.500000:d=0.500000:curve=hsin")
         self.assertNotIn("t=in", commands[0][commands[0].index("-af") + 1])
 
     def test_stale_launch_is_cancelled(self):
