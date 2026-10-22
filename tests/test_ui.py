@@ -149,7 +149,10 @@ class UITests(unittest.TestCase):
                 self.assertTrue(canvas.find_withtag("border_line_1"),
                                 f"{widget} must draw a polygon, not AA font corners")
                 self.assertFalse(canvas.find_withtag("border_oval_1_a"))
-                coords = canvas.coords("border_line_1")
+                # CTkCanvas.coords() discards the return value. Read via
+                # Tk Canvas directly to inspect the real polygon coordinates.
+                import tkinter
+                coords = tkinter.Canvas.coords(canvas, "border_line_1")
                 self.assertEqual(len(coords), 8)
                 left, top, right, _, _, bottom, _, _ = coords
                 self.assertEqual(coords, [left, top, right, top,
