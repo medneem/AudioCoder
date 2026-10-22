@@ -28,8 +28,8 @@
     ]
   },
   "CTkButton": {
-    "corner_radius": 8,
-    "border_width": 1,
+    "corner_radius": 6,
+    "border_width": 2,
     "fg_color": [
       "#E8F0F3",
       "#344A54"
@@ -205,7 +205,7 @@
     ]
   },
   "CTkOptionMenu": {
-    "corner_radius": 8,
+    "corner_radius": 6,
     "fg_color": [
       "#E8F1F4",
       "#344B55"
