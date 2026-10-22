@@ -97,12 +97,13 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             header, text="❔ Справка", width=110, command=self.open_help)
         self.help_button.pack(side="right", padx=(0, 12))
 
-        # The entire editor is a regular frame: no nested vertical scrolling.
-        # Keep height compact, and enforce its requested size after layout so
-        # Windows DPI scaling cannot silently clip settings below the waveform.
-        self.editor_panel = ctk.CTkFrame(self, corner_radius=14)
+        # No outer grey block: use the exact same background as the window.
+        # Keep a real CTkFrame to preserve the existing grid and DPI layout.
+        self.editor_panel = ctk.CTkFrame(
+            self, fg_color=self.cget("fg_color"), corner_radius=0,
+            border_width=0)
         frame = self.editor_panel
-        frame.grid(row=1, column=0, sticky="nsew", padx=17, pady=3)
+        frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
         frame.grid_columnconfigure(0, weight=1)
         source_header = ctk.CTkFrame(frame, fg_color="transparent")
         source_header.grid(row=0, column=0, sticky="ew", padx=16, pady=(5, 0))
@@ -143,8 +144,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.slider._canvas.bind("<ButtonRelease-1>", self._slider_released, add="+")
         # Approved mockup variant 3: compact quality rows, highlighted fade
         # card, and a distinct folder strip, without an internal scrollbar.
-        zoom_row = ctk.CTkFrame(frame, fg_color=ZOOM_ROW,
-                                corner_radius=12)
+        zoom_row = ctk.CTkFrame(
+            frame, fg_color=ZOOM_ROW, corner_radius=12,
+            border_width=2, border_color=CARD_BORDER)
         zoom_row.grid(row=7, column=0, sticky="ew", padx=16, pady=(1, 5))
         zoom_row.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
@@ -184,7 +186,7 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
             buttons, text="Конвертировать", width=170, state="disabled",
             fg_color=BUTTON_PRIMARY, hover_color=BUTTON_PRIMARY_HOVER,
             text_color=BUTTON_PRIMARY_TEXT, border_color=BUTTON_PRIMARY_BORDER,
-            border_width=1, command=self.convert)
+            border_width=2, command=self.convert)
         self.run_button.pack(side="left")
         self._refresh()
         self.body_font = apply_body_font(self, excluded=(self.main_heading,))
@@ -194,8 +196,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _build_codec_card(self, frame):
         """Source encoding, bitrate, and optional variable-bitrate controls."""
         self.codec_card = ctk.CTkFrame(
-            frame, fg_color=CARD, corner_radius=14,
-            border_width=1, border_color=CARD_BORDER)
+            frame, fg_color=CARD, corner_radius=12,
+            border_width=2, border_color=CARD_BORDER)
         self.codec_card.grid(row=8, column=0, sticky="ew", padx=16, pady=(0, 5))
         codec_row = ctk.CTkFrame(self.codec_card, fg_color="transparent")
         codec_row.pack(fill="x", padx=12, pady=(7, 4))
@@ -233,8 +235,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _build_fade_card(self, frame):
         """Independent fade-in/out curves without inline help diagrams."""
         self.fade_card = ctk.CTkFrame(
-            frame, fg_color=FADE_CARD, corner_radius=14,
-            border_width=1, border_color=FADE_BORDER)
+            frame, fg_color=FADE_CARD, corner_radius=12,
+            border_width=2, border_color=FADE_BORDER)
         self.fade_card.grid(row=9, column=0, sticky="ew", padx=16, pady=(0, 5))
         fades = ctk.CTkFrame(self.fade_card, fg_color="transparent")
         fades.pack(fill="x", padx=12, pady=(7, 5))
@@ -277,8 +279,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
     def _build_folder_card(self, frame):
         """Output directory picker; destination label lives in status only."""
         self.folder_card = ctk.CTkFrame(
-            frame, fg_color=CARD, corner_radius=14,
-            border_width=1, border_color=CARD_BORDER)
+            frame, fg_color=CARD, corner_radius=12,
+            border_width=2, border_color=CARD_BORDER)
         self.folder_card.grid(row=10, column=0, sticky="ew", padx=16, pady=(0, 5))
         self.folder_card.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.folder_card, text="📁", width=38).grid(
