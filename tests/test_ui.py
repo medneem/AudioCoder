@@ -649,7 +649,7 @@ class UITests(unittest.TestCase):
                 self.window._loaded(AudioInfo(path, 100.0, "flac", 44100, 2))
                 self.window.slider.set([10.0, 20.0])
                 self.window.on_range(self.window.slider.get())
-                self.window._playing = False
+                self.window._stop_playback()
                 self.window._seek_to_marker("left")
                 self.assertEqual(self.window._cursor_position, 10.0)
                 self.window._step_cursor(1.0)
@@ -674,6 +674,7 @@ class UITests(unittest.TestCase):
                 self.window._loaded(AudioInfo(path, 100.0, "flac", 44100, 2))
                 self.window.slider.set([10, 30])
                 self.window.on_range(self.window.slider.get())
+                self.window._stop_playback()
                 self.window._seek_to_marker("left")
                 self.window._step_cursor(5)
                 self.window.fade_var.set(True)
