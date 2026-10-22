@@ -86,8 +86,8 @@ class UITests(unittest.TestCase):
             self.assertIsInstance(card, ctk.CTkFrame)
             self.assertEqual(card.winfo_manager(), "grid")
         self.assertEqual(self.window.codec_card.cget("corner_radius"), 14)
-        self.assertNotEqual(self.window.fade_card.cget("fg_color"),
-                            self.window.codec_card.cget("fg_color"))
+        self.assertEqual(self.window.fade_card.cget("fg_color"),
+                         self.window.codec_card.cget("fg_color"))
         for widget in (
             self.window.format_menu, self.window.bitrate_menu,
             self.window.vbr_checkbox, self.window.fade_checkbox,
@@ -100,6 +100,42 @@ class UITests(unittest.TestCase):
             self.assertEqual(font.cget("size"), BODY_SIZE)
         self.assertEqual(self.window.main_heading.cget("font").cget("size"),
                          TITLE_SIZE)
+
+    def test_editor_has_no_gray_outer_container(self):
+        from audiocoder.palette import WINDOW
+        self.assertEqual(tuple(self.window.editor_panel.cget("fg_color")), WINDOW)
+        self.assertEqual(self.window.editor_panel.cget("corner_radius"), 0)
+        self.assertEqual(self.window.editor_panel.cget("border_width"), 0)
+        self.assertEqual(int(self.window.editor_panel.grid_info()["padx"]), 0)
+        # The actual root/window background is the same as the editor surface.
+        self.assertEqual(tuple(self.window.cget("fg_color")), WINDOW)
+
+    def test_uniform_white_cards_and_unbroken_thicker_borders(self):
+        from audiocoder.palette import CARD, CARD_BORDER
+        cards = (self.window.codec_card, self.window.fade_card,
+                 self.window.folder_card, self.window.zoom_label.master)
+        for card in cards:
+            with self.subTest(widget=card):
+                self.assertEqual(tuple(card.cget("fg_color")), CARD)
+                self.assertEqual(tuple(card.cget("border_color")), CARD_BORDER)
+                self.assertEqual(card.cget("border_width"), 2)
+                self.assertEqual(card.cget("corner_radius"), 12)
+        buttons = (self.window.help_button, self.window.open_button,
+                   self.window.folder_button, self.window.play_button,
+                   self.window.cancel_button, self.window.run_button)
+        for button in buttons:
+            with self.subTest(widget=button):
+                self.assertEqual(button.cget("border_width"), 2)
+                self.assertEqual(button.cget("corner_radius"), 6)
+
+    def test_switching_themes_keeps_cards_uniform(self):
+        for appearance in ("Тёмная", "Светлая"):
+            with self.subTest(appearance=appearance), patch("audiocoder.ui.save_settings"):
+                self.window.on_appearance(appearance)
+                cards = (self.window.codec_card, self.window.fade_card,
+                         self.window.folder_card, self.window.zoom_label.master)
+                self.assertEqual(len({c._apply_appearance_mode(c.cget("fg_color"))
+                                      for c in cards}), 1)
 
     def test_large_progress_backlog_does_not_block_gui_event_loop(self):
         import queue
