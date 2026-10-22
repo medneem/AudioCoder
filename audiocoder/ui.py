@@ -6,6 +6,7 @@ import queue
 import threading
 
 import customtkinter as ctk
+from PIL import ImageTk
 from CTkMessagebox import CTkMessagebox
 from tkinterdnd2 import COPY, DND_FILES, REFUSE_DROP, TkinterDnD
 from vendor.CTkRangeSlider import CTkRangeSlider
@@ -22,6 +23,7 @@ from .fade import FADE_OPTIONS
 from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
 from .explorer import reveal_output_file
+from .app_icon import create_icon_image
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
 from .palette import (BUTTON_PRIMARY, BUTTON_PRIMARY_HOVER,
                       BUTTON_PRIMARY_TEXT, BUTTON_PRIMARY_BORDER,
@@ -52,6 +54,11 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
         self.title(f"AudioCoder {APP_VERSION}")
+        # CustomTkinter sets its generic Windows icon in a delayed callback.
+        # Apply the AudioCoder icon after that callback has completed.
+        self._window_icon_large = None
+        self._window_icon_small = None
+        self.after(350, self._set_window_icon)
         self.geometry("920x690")
         self.minsize(810, 620)
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -356,12 +363,23 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         # the output folder card when the redundant result row is absent.
         self.geometry(f"920x{minimum}")
 
-    def _show_message(self, title, message, *, icon="info", option_1="ОК"):
+    def _set_window_icon(self):
+        """Install AudioCoder artwork in the titlebar and taskbar, not CTk's icon."""
+        if self.closing:
+            return
+        self._window_icon_large = ImageTk.PhotoImage(
+            create_icon_image(64), master=self)
+        self._window_icon_small = ImageTk.PhotoImage(
+            create_icon_image(16), master=self)
+        self.iconphoto(True, self._window_icon_large, self._window_icon_small)
+
+    def _show_message(self, title, message, *, icon="info", option_1="ОК",
+                      option_2=None):
         """One CustomTkinter-styled message dialog for app notifications."""
         dark = ctk.get_appearance_mode() == "Dark"
         return CTkMessagebox(
             master=self, title=title, message=str(message),
-            icon=icon, option_1=option_1, width=470, height=210,
+            icon=icon, option_1=option_1, option_2=option_2, width=470, height=210,
             border_color=theme_color(CARD_BORDER, dark=dark),
             button_color=theme_color(BUTTON_PRIMARY, dark=dark),
             button_hover_color=theme_color(BUTTON_PRIMARY_HOVER, dark=dark),
@@ -980,17 +998,19 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
                     self.status.configure(text=f"Готово: {data.name}")
                     # Open Explorer after acknowledgement, so the modal remains
                     # visible and Explorer receives focus rather than hiding.
-                    self._show_message(
+                    choice = self._show_message(
                         "Конвертация завершена",
                         f"Файл успешно сохранён:\n{data}",
-                        icon="check", option_1="Открыть папку").get()
-                    try:
-                        reveal_output_file(data)
-                    except OSError as exc:
-                        self._show_message(
-                            "Файл сохранён",
-                            f"Не удалось открыть папку результата:\n{exc}",
-                            icon="warning")
+                        icon="check", option_1="Хорошо",
+                        option_2="Открыть папку").get()
+                    if choice == "Открыть папку":
+                        try:
+                            reveal_output_file(data)
+                        except OSError as exc:
+                            self._show_message(
+                                "Файл сохранён",
+                                f"Не удалось открыть папку результата:\n{exc}",
+                                icon="warning")
                 elif kind == "cancelled":
                     self._end()
                     self.progress.set(0)
