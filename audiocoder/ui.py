@@ -21,7 +21,9 @@ from .fade import FADE_CURVES
 from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
-from .palette import (CARD, CARD_BORDER, CANCEL_BG, CANCEL_HOVER,
+from .palette import (BUTTON_PRIMARY, BUTTON_PRIMARY_HOVER,
+                      BUTTON_PRIMARY_TEXT, BUTTON_PRIMARY_BORDER,
+                      CARD, CARD_BORDER, CANCEL_BG, CANCEL_HOVER, CANCEL_TEXT,
                       DND_BORDER, FADE_BORDER, FADE_CARD, FADE_DIVIDER,
                       ZOOM_ROW, theme_color, theme_path)
 from .selection import ClipRange, clock
@@ -175,10 +177,14 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.play_button.pack(side="left", padx=(0, 10))
         self.cancel_button = ctk.CTkButton(buttons, text="Отмена", width=100, state="disabled",
                                             fg_color=CANCEL_BG, hover_color=CANCEL_HOVER,
+                                            text_color=CANCEL_TEXT,
                                             command=self.cancel)
         self.cancel_button.pack(side="left", padx=(0, 10))
-        self.run_button = ctk.CTkButton(buttons, text="Конвертировать", width=170,
-                                         state="disabled", command=self.convert)
+        self.run_button = ctk.CTkButton(
+            buttons, text="Конвертировать", width=170, state="disabled",
+            fg_color=BUTTON_PRIMARY, hover_color=BUTTON_PRIMARY_HOVER,
+            text_color=BUTTON_PRIMARY_TEXT, border_color=BUTTON_PRIMARY_BORDER,
+            border_width=1, command=self.convert)
         self.run_button.pack(side="left")
         self._refresh()
         self.body_font = apply_body_font(self, excluded=(self.main_heading,))
