@@ -77,6 +77,7 @@ class AudioPlayer:
     _window: PlaybackWindow | None = field(default=None, init=False)
     _started_at: float | None = field(default=None, init=False, repr=False)
     _pending: bool = field(default=False, init=False)
+    last_returncode: int | None = field(default=None, init=False)
 
     @property
     def generation(self) -> int:
@@ -91,6 +92,7 @@ class AudioPlayer:
             self._window = None
             self._pending = False
             self._started_at = None
+            self.last_returncode = None
             if process is not None and process.poll() is None:
                 process.kill()
 
@@ -107,6 +109,7 @@ class AudioPlayer:
             self._window = window
             self._pending = True
             self._started_at = None
+            self.last_returncode = None
         threading.Thread(
             target=self._launch, args=(generation, Path(source), window, effects, on_error),
             daemon=True,
@@ -135,6 +138,7 @@ class AudioPlayer:
                     self._process = None
                     self._pending = False
                     self._started_at = None
+                    self.last_returncode = -1
             if valid and on_error:
                 on_error(generation, str(exc))
 
@@ -145,7 +149,11 @@ class AudioPlayer:
                 return None
             if self._pending:
                 return self._window.start
-            if self._process is None or self._process.poll() is not None:
+            if self._process is None:
+                return None
+            result = self._process.poll()
+            if result is not None:
+                self.last_returncode = result
                 self._window = None
                 self._process = None
                 self._started_at = None
