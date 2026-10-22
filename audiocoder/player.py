@@ -35,7 +35,7 @@ def listening_window(mode: str, left: float, right: float) -> PlaybackWindow:
     if mode == "right":
         return PlaybackWindow(max(left, right - 1.0), right)
     if mode == "left":
-        return PlaybackWindow(left, min(left + 5.0, right))
+        return PlaybackWindow(left, right)
     return PlaybackWindow(left, right)
 
 
