@@ -651,7 +651,8 @@ class UITests(unittest.TestCase):
             path = Path(tmp) / "Последний файл.flac"
             path.touch()
             self.window.settings["last_source_path"] = str(path)
-            with patch.object(self.window, "open_file") as open_file:
+            with patch.object(self.window, "info", None), \
+                 patch.object(self.window, "open_file") as open_file:
                 self.window._restore_last_source()
                 open_file.assert_called_once_with(path)
                 open_file.reset_mock()
