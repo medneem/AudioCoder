@@ -603,6 +603,7 @@ class UITests(unittest.TestCase):
         self.window._playing = True
         self.window._play_mode = "selection"
         with patch.object(self.window.player, "position", return_value=None), \
+             patch.object(self.window.player, "last_returncode", 0), \
              patch.object(self.window, "_play_segment") as replay, \
              patch.object(self.window, "after"):
             self.window._poll()
