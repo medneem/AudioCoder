@@ -43,8 +43,9 @@ class PlaybackTests(unittest.TestCase):
         window = PlaybackWindow(12, 22)
         cmd = ffplay_command(Path("Музыка.flac"), window, Path("ffplay"), effects)
         self.assertIn("-af", cmd)
-        self.assertEqual(cmd[cmd.index("-af") + 1],
-                         fade_filtergraph(10, 1, "qsin", "cub"))
+        self.assertEqual(
+            cmd[cmd.index("-af") + 1],
+            "asetpts=PTS-STARTPTS," + fade_filtergraph(10, 1, "qsin", "cub"))
         self.assertIn("afade=t=in:st=0:d=1.000000:curve=qsin",
                       cmd[cmd.index("-af") + 1])
         self.assertIn("afade=t=out:st=9.000000:d=1.000000:curve=cub",
@@ -196,8 +197,9 @@ class PlayerTransportTests(unittest.TestCase):
             self.assertTrue(launched.wait(3), "FFplay did not launch")
             player.stop()
         self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0][commands[0].index("-af") + 1],
-                         "afade=t=out:st=3.500000:d=0.500000:curve=hsin")
+        self.assertEqual(
+            commands[0][commands[0].index("-af") + 1],
+            "asetpts=PTS-STARTPTS,afade=t=out:st=3.500000:d=0.500000:curve=hsin")
         self.assertNotIn("t=in", commands[0][commands[0].index("-af") + 1])
 
     def test_stale_launch_is_cancelled(self):
