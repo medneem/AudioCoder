@@ -167,7 +167,7 @@ class UITests(unittest.TestCase):
                 self.assertEqual(self.window._on_wave_drop(
                     SimpleNamespace(data="{" + str(path) + "}")), COPY)
                 open_file.assert_called_once_with(path)
-            with patch("audiocoder.ui.messagebox.showwarning") as warning:
+            with patch.object(self.window, "_show_message") as warning:
                 self.assertEqual(self.window._on_wave_drop(
                     SimpleNamespace(data="{other.txt}")), REFUSE_DROP)
                 warning.assert_called_once()
@@ -765,6 +765,65 @@ class UITests(unittest.TestCase):
                     self.assertEqual(play.call_count, 2)
                     self.assertFalse(self.window._playing)
             self.window._stop_playback()
+
+
+    def test_success_popup_opens_converted_file_in_explorer_after_acknowledgement(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            result = Path(tmp) / "Готовая песня.flac"
+            result.write_bytes(b"audio")
+            self.window.busy = True
+            self.window.runner = Mock()
+            self.window.events.put(("finished", result))
+            sequence = []
+            with patch.object(self.window, "_show_message") as show, \
+                 patch("audiocoder.ui.reveal_output_file") as reveal:
+                show.return_value.get.side_effect = lambda: sequence.append("closed")
+                reveal.side_effect = lambda path: sequence.append("explorer")
+                self.window._poll()
+                show.assert_called_once()
+                args, kwargs = show.call_args
+                self.assertEqual(kwargs["icon"], "check")
+                self.assertIn(result.name, args[1])
+                show.return_value.get.assert_called_once_with()
+                reveal.assert_called_once_with(result)
+            self.assertEqual(sequence, ["closed", "explorer"])
+            self.assertFalse(self.window.busy)
+            self.assertEqual(self.window.progress.get(), 1)
+            self.assertIn(result.name, self.window.status.cget("text"))
+
+    def test_conversion_cancel_or_error_never_opens_explorer_or_reports_success(self):
+        from unittest.mock import Mock
+        for event in ("cancelled", "convert_error"):
+            with self.subTest(event=event), \
+                 patch.object(self.window, "_show_message") as show, \
+                 patch("audiocoder.ui.reveal_output_file") as reveal:
+                self.window.busy = True
+                self.window.runner = Mock()
+                self.window.events.put((event, "Ошибка ffmpeg" if event == "convert_error" else None))
+                self.window._poll()
+                reveal.assert_not_called()
+                if event == "convert_error":
+                    self.assertEqual(show.call_args.kwargs["icon"], "cancel")
+                else:
+                    show.assert_not_called()
+
+    def test_explorer_failure_keeps_success_and_shows_warning(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            result = Path(tmp) / "Готово.flac"
+            result.touch()
+            self.window.busy = True
+            self.window.runner = Mock()
+            self.window.events.put(("finished", result))
+            with patch.object(self.window, "_show_message") as show, \
+                 patch("audiocoder.ui.reveal_output_file", side_effect=OSError("Explorer failed")):
+                self.window._poll()
+                self.assertEqual(show.call_args_list[0].kwargs["icon"], "check")
+                self.assertEqual(show.call_args_list[1].kwargs["icon"], "warning")
+                self.assertIn("Explorer failed", show.call_args_list[1].args[1])
+                self.assertIn(result.name, self.window.status.cget("text"))
+
 
 
 if __name__ == "__main__":
