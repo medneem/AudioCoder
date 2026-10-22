@@ -51,10 +51,10 @@ class PlaybackTests(unittest.TestCase):
         self.assertIn("afade=t=out:st=9.000000:d=1.000000:curve=cub",
                       cmd[cmd.index("-af") + 1])
 
-    def test_marker_previews_apply_only_matching_boundary(self):
-        for mode, window, expected, absent in (
-            ("left", PlaybackWindow(20, 25), "t=in", "t=out"),
-            ("right", PlaybackWindow(24, 25), "t=out", "t=in"),
+    def test_left_preview_applies_both_fades_and_right_preview_only_fades_out(self):
+        for mode, window, has_in in (
+            ("left", PlaybackWindow(20, 25), True),
+            ("right", PlaybackWindow(24, 25), False),
         ):
             with self.subTest(mode=mode):
                 effects = PlaybackEffects(
@@ -62,8 +62,8 @@ class PlaybackTests(unittest.TestCase):
                     out_curve="log", mode=mode)
                 cmd = ffplay_command(Path("song.flac"), window, Path("ffplay"), effects)
                 fade = cmd[cmd.index("-af") + 1]
-                self.assertIn(expected, fade)
-                self.assertNotIn(absent, fade)
+                self.assertIn("t=out", fade)
+                self.assertEqual("t=in" in fade, has_in)
 
     def test_disabled_or_none_fades_are_absent_in_preview(self):
         win = PlaybackWindow(0, 5)
