@@ -1,6 +1,7 @@
 """The CustomTkinter presentation layer; no FFmpeg work on the UI thread."""
 
 from pathlib import Path
+import sys
 from tkinter import filedialog
 import queue
 import threading
@@ -23,7 +24,7 @@ from .fade import FADE_OPTIONS
 from .fade_help import FadeHelpWindow
 from .drag_drop import dropped_audio_path
 from .explorer import reveal_output_file
-from .app_icon import create_icon_image
+from .app_icon import create_icon_image, icon_file_path
 from .ui_style import FONT_FAMILY, TITLE_SIZE, apply_body_font
 from .palette import (BUTTON_PRIMARY, BUTTON_PRIMARY_HOVER,
                       BUTTON_PRIMARY_TEXT, BUTTON_PRIMARY_BORDER,
@@ -54,11 +55,8 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)
         self.title(f"AudioCoder {APP_VERSION}")
-        # CustomTkinter sets its generic Windows icon in a delayed callback.
-        # Apply the AudioCoder icon after that callback has completed.
         self._window_icon_large = None
         self._window_icon_small = None
-        self.after(350, self._set_window_icon)
         self.geometry("920x690")
         self.minsize(810, 620)
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -68,6 +66,9 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.busy = False
         self.probing = False
         self.closing = False
+        # Install native Windows ICO before CustomTkinter's delayed default
+        # iconbitmap(200 ms). CTk skips its override once ours is installed.
+        self._set_window_icon()
         self.source_sequence = 0
         self.player = AudioPlayer()
         self._preview_timer = None
@@ -372,6 +373,12 @@ class AudioCoderApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self._window_icon_small = ImageTk.PhotoImage(
             create_icon_image(16), master=self)
         self.iconphoto(True, self._window_icon_large, self._window_icon_small)
+        if sys.platform == "win32":
+            # Windows uses ICO for its native titlebar/Alt+Tab icon. Calling
+            # only iconphoto had left CustomTkinter's own titlebar icon in place.
+            # CTk.iconbitmap also marks _iconbitmap_method_called, blocking
+            # CTk's delayed CustomTkinter_icon_Windows.ico replacement.
+            self.iconbitmap(str(icon_file_path()))
 
     def _show_message(self, title, message, *, icon="info", option_1="ОК",
                       option_2=None):

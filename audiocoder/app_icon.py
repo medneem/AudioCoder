@@ -1,4 +1,7 @@
 """Canonical AudioCoder icon artwork shared by the GUI and Windows build."""
+from pathlib import Path
+import sys
+
 from PIL import Image, ImageDraw
 
 
@@ -17,3 +20,27 @@ def create_icon_image(size: int = 512) -> Image.Image:
     if size != 512:
         image = image.resize((size, size), Image.Resampling.LANCZOS)
     return image
+
+
+# Keep in sync with scripts/build_icon.py and the multi-resolution EXE icon.
+ICO_SIZES = ((16, 16), (24, 24), (32, 32), (48, 48),
+             (64, 64), (128, 128), (256, 256))
+
+
+def icon_file_path(*, application_root: Path | None = None) -> Path:
+    """Resolve a real .ico file for Tk/Windows wm_iconbitmap.
+
+    PyInstaller onefile extracts the bundled icon to sys._MEIPASS. Development
+    checkouts generate the same ICO on demand when assets/app.ico is absent.
+    """
+    if getattr(sys, "frozen", False):
+        path = Path(sys._MEIPASS) / "assets" / "app.ico"
+        if not path.is_file():
+            raise FileNotFoundError(f"Не найдена иконка приложения: {path}")
+        return path
+    root = Path(application_root) if application_root is not None else Path(__file__).resolve().parent.parent
+    path = root / "assets" / "app.ico"
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        create_icon_image().save(path, format="ICO", sizes=ICO_SIZES)
+    return path

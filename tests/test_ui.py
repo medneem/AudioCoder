@@ -822,7 +822,9 @@ class UITests(unittest.TestCase):
         self.assertEqual(image.mode, "RGBA")
         self.assertNotEqual(image.getpixel((32, 32))[3], 0)
         with patch("audiocoder.ui.ImageTk.PhotoImage", wraps=ImageTk.PhotoImage) as photo, \
-             patch.object(self.window, "iconphoto") as iconphoto:
+             patch.object(self.window, "iconphoto") as iconphoto, \
+             patch.object(self.window, "iconbitmap",
+                          wraps=self.window.iconbitmap) as iconbitmap:
             self.window._set_window_icon()
             self.assertEqual(photo.call_count, 2)
             iconphoto.assert_called_once()
@@ -830,6 +832,16 @@ class UITests(unittest.TestCase):
             self.assertEqual(len(iconphoto.call_args.args), 3)
             self.assertIsNotNone(self.window._window_icon_large)
             self.assertIsNotNone(self.window._window_icon_small)
+            # On Windows iconphoto alone does not reliably override CTk's
+            # delayed default .ico. The native WM iconbitmap must be set too.
+            if __import__("sys").platform == "win32":
+                iconbitmap.assert_called_once()
+                path = Path(iconbitmap.call_args.args[0])
+                self.assertTrue(path.is_file())
+                self.assertEqual(path.suffix, ".ico")
+                self.assertTrue(self.window._iconbitmap_method_called)
+            else:
+                iconbitmap.assert_not_called()
 
     def test_conversion_cancel_or_error_never_opens_explorer_or_reports_success(self):
         from unittest.mock import Mock
