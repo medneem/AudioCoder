@@ -47,21 +47,34 @@ class UITests(unittest.TestCase):
         help_window.destroy()
         self.window._help_window = None
 
-    def test_muted_palette_is_used_by_real_gui_widgets(self):
+    def test_button_hierarchy_on_actual_widgets(self):
         import customtkinter as ctk
-        from audiocoder.palette import (ACCENT, CARD, CARD_BORDER,
-                                         FADE_CARD, FADE_BORDER, ZOOM_ROW,
-                                         CANCEL_BG)
+        from audiocoder.palette import (
+            BUTTON_SECONDARY, BUTTON_SECONDARY_TEXT, BUTTON_PRIMARY,
+            BUTTON_PRIMARY_TEXT, CARD, CARD_BORDER, FADE_CARD, FADE_BORDER,
+            MENU_BG, MENU_TEXT, ZOOM_ROW, CANCEL_BG, CANCEL_TEXT, ACCENT)
         self.assertEqual(
-            tuple(ctk.ThemeManager.theme["CTkButton"]["fg_color"]), ACCENT)
+            tuple(ctk.ThemeManager.theme["CTkButton"]["fg_color"]),
+            BUTTON_SECONDARY)
+        for button in (self.window.help_button, self.window.open_button,
+                       self.window.folder_button, self.window.play_button):
+            self.assertEqual(tuple(button.cget("fg_color")), BUTTON_SECONDARY)
+            self.assertEqual(tuple(button.cget("text_color")), BUTTON_SECONDARY_TEXT)
+        self.assertEqual(tuple(self.window.run_button.cget("fg_color")), BUTTON_PRIMARY)
+        self.assertEqual(tuple(self.window.run_button.cget("text_color")), BUTTON_PRIMARY_TEXT)
+        self.assertEqual(tuple(self.window.cancel_button.cget("fg_color")), CANCEL_BG)
+        self.assertEqual(tuple(self.window.cancel_button.cget("text_color")), CANCEL_TEXT)
         self.assertEqual(tuple(self.window.codec_card.cget("fg_color")), CARD)
         self.assertEqual(tuple(self.window.codec_card.cget("border_color")), CARD_BORDER)
         self.assertEqual(tuple(self.window.fade_card.cget("fg_color")), FADE_CARD)
         self.assertEqual(tuple(self.window.fade_card.cget("border_color")), FADE_BORDER)
-        self.assertEqual(tuple(self.window.format_menu.cget("fg_color")), ACCENT)
+        for menu in (self.window.format_menu, self.window.bitrate_menu,
+                     self.window.fade_in_menu, self.window.fade_out_menu,
+                     self.window.fade_menu, self.window.appearance_menu):
+            self.assertEqual(tuple(menu.cget("fg_color")), MENU_BG)
+            self.assertEqual(tuple(menu.cget("text_color")), MENU_TEXT)
         self.assertEqual(tuple(self.window.progress.cget("progress_color")), ACCENT)
         self.assertEqual(tuple(self.window.slider.cget("button_color")), ACCENT)
-        self.assertEqual(tuple(self.window.cancel_button.cget("fg_color")), CANCEL_BG)
         self.assertEqual(
             tuple(self.window.zoom_label.master.cget("fg_color")), ZOOM_ROW)
 
