@@ -717,19 +717,21 @@ class UITests(unittest.TestCase):
                 self.window._loaded(AudioInfo(path, 100.0, "flac", 44100, 2))
                 self.window.slider.set([10.0, 20.0])
                 self.window.on_range(self.window.slider.get())
-                self.window._stop_playback()
-                self.window._seek_to_marker("left")
-                self.assertEqual(self.window._cursor_position, 10.0)
-                self.window._step_cursor(1.0)
-                self.assertEqual(self.window._cursor_position, 11.0)
-                self.window._step_cursor(-1.0)
-                self.assertEqual(self.window._cursor_position, 10.0)
-                self.window._seek_to_marker("right")
-                self.window._step_cursor(1.0)
-                self.assertEqual(self.window._cursor_position, 20.0)
-                self.assertAlmostEqual(self.window.waveform.playhead, .2)
-                self.assertEqual(self.window.seek_left_button.cget("state"), "normal")
-                self.assertEqual(self.window.zoom_in_button.cget("state"), "normal")
+                with patch.object(self.window.player, "play", return_value=12) as play, \
+                     patch.object(self.window.player, "position", return_value=None):
+                    self.window._stop_playback()
+                    self.window._seek_to_marker("left")
+                    self.assertEqual(self.window._cursor_position, 10.0)
+                    self.window._step_cursor(1.0)
+                    self.assertEqual(self.window._cursor_position, 11.0)
+                    self.window._step_cursor(-1.0)
+                    self.assertEqual(self.window._cursor_position, 10.0)
+                    self.window._seek_to_marker("right")
+                    self.window._step_cursor(1.0)
+                    self.assertEqual(self.window._cursor_position, 20.0)
+                    self.assertEqual(play.call_count, 5)
+                    self.assertEqual(self.window.seek_left_button.cget("state"), "normal")
+                    self.assertEqual(self.window.zoom_in_button.cget("state"), "normal")
             self.window._stop_playback()
 
     def test_seeked_play_starts_at_cursor_and_retain_right_fade(self):
@@ -743,16 +745,19 @@ class UITests(unittest.TestCase):
                 self.window.slider.set([10, 30])
                 self.window.on_range(self.window.slider.get())
                 self.window._stop_playback()
-                self.window._seek_to_marker("left")
-                self.window._step_cursor(5)
                 self.window.fade_var.set(True)
                 self.window.on_fade_changed()
-                with patch.object(self.window.player, "play", return_value=3) as play:
-                    self.window.toggle_play()
+                with patch.object(self.window.player, "play", return_value=3) as play, \
+                     patch.object(self.window.player, "position", return_value=None):
+                    self.window._seek_to_marker("left")
+                    self.window._step_cursor(5)
                     self.assertEqual(play.call_args.args[1], PlaybackWindow(15, 30))
                     effects = play.call_args.kwargs["effects"]
                     self.assertEqual(effects.mode, "right")
                     self.assertEqual(effects.in_curve, "none")
+                    self.window.toggle_play()
+                    self.assertEqual(play.call_count, 2)
+                    self.assertFalse(self.window._playing)
             self.window._stop_playback()
 
 
