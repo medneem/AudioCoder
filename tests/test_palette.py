@@ -5,6 +5,9 @@ from pathlib import Path
 
 from audiocoder.palette import (
     ACCENT, CARD, CARD_BORDER, FADE_CARD, FADE_BORDER, WINDOW, EDITOR,
+    BUTTON_SECONDARY, BUTTON_PRIMARY, BUTTON_SECONDARY_TEXT,
+    BUTTON_PRIMARY_TEXT, MENU_BG, MENU_TEXT, MENU_ARROW, BUTTON_BORDER,
+    CANCEL_BG, CANCEL_TEXT,
     ZOOM_ROW, WAVE_BACKGROUND, WAVE_SELECTION, WAVE_ACTIVE,
     FADE_CHART_BACKGROUND, FADE_CHART_LINE, theme_path,
     theme_color, contrast_ratio,
@@ -17,12 +20,41 @@ class MutedPaletteTests(unittest.TestCase):
         self.assertTrue(path.is_file(), f"Missing CustomTkinter theme file {path}")
         theme = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(tuple(theme["CTk"]["fg_color"]), WINDOW)
-        self.assertEqual(tuple(theme["CTkButton"]["fg_color"]), ACCENT)
+        self.assertEqual(tuple(theme["CTkButton"]["fg_color"]), BUTTON_SECONDARY)
+        self.assertEqual(tuple(theme["CTkButton"]["text_color"]), BUTTON_SECONDARY_TEXT)
+        self.assertEqual(tuple(theme["CTkButton"]["border_color"]), BUTTON_BORDER)
         self.assertEqual(tuple(theme["CTkCheckBox"]["fg_color"]), ACCENT)
-        self.assertEqual(tuple(theme["CTkOptionMenu"]["fg_color"]), ACCENT)
+        self.assertEqual(tuple(theme["CTkOptionMenu"]["fg_color"]), MENU_BG)
+        self.assertEqual(tuple(theme["CTkOptionMenu"]["button_color"]), MENU_ARROW)
+        self.assertEqual(tuple(theme["CTkOptionMenu"]["text_color"]), MENU_TEXT)
         self.assertEqual(tuple(theme["CTkProgressBar"]["progress_color"]), ACCENT)
         self.assertEqual(tuple(theme["CTkSlider"]["button_color"]), ACCENT)
         self.assertEqual(tuple(theme["CTkFrame"]["fg_color"]), EDITOR)
+
+    def test_control_hierarchy_uses_light_secondary_surfaces(self):
+        theme = json.loads(theme_path().read_text(encoding="utf-8"))
+        self.assertEqual(theme["CTkButton"]["border_width"], 1)
+        # Previous theme made *every* control a dark blue block. Secondary
+        # controls must instead have light surfaces and dark, legible labels.
+        for surface in (BUTTON_SECONDARY[0], MENU_BG[0], CANCEL_BG[0]):
+            self.assertLess(contrast_ratio(surface, "#FFFFFF"), 1.65)
+        self.assertGreater(contrast_ratio(BUTTON_PRIMARY[0], "#FFFFFF"),
+                           contrast_ratio(BUTTON_SECONDARY[0], "#FFFFFF"))
+        for index in (0, 1):
+            with self.subTest(mode=index):
+                self.assertGreaterEqual(
+                    contrast_ratio(BUTTON_SECONDARY_TEXT[index],
+                                   BUTTON_SECONDARY[index]), 4.5)
+                self.assertGreaterEqual(
+                    contrast_ratio(BUTTON_PRIMARY_TEXT[index],
+                                   BUTTON_PRIMARY[index]), 4.5)
+                self.assertGreaterEqual(
+                    contrast_ratio(MENU_TEXT[index], MENU_BG[index]), 4.5)
+                self.assertGreaterEqual(
+                    contrast_ratio(CANCEL_TEXT[index], CANCEL_BG[index]), 4.5)
+        # Preserve a visible active control without making all buttons dark.
+        self.assertNotEqual(BUTTON_SECONDARY, BUTTON_PRIMARY)
+        self.assertNotEqual(MENU_BG, ACCENT)
 
     def test_light_and_dark_components_have_distinct_quiet_palette(self):
         for colors in (WINDOW, EDITOR, CARD, FADE_CARD, ZOOM_ROW,
