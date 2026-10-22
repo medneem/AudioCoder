@@ -804,7 +804,7 @@ class UITests(unittest.TestCase):
                 self.window.busy = True
                 self.window.runner = Mock()
                 self.window.events.put(("finished", result))
-                with patch.object(self.window, "_show_message") as show, \\
+                with patch.object(self.window, "_show_message") as show, \
                      patch("audiocoder.ui.reveal_output_file") as reveal:
                     show.return_value.get.return_value = response
                     self.window._poll()
@@ -857,6 +857,7 @@ class UITests(unittest.TestCase):
             self.window.events.put(("finished", result))
             with patch.object(self.window, "_show_message") as show, \
                  patch("audiocoder.ui.reveal_output_file", side_effect=OSError("Explorer failed")):
+                show.return_value.get.return_value = "Открыть папку"
                 self.window._poll()
                 self.assertEqual(show.call_args_list[0].kwargs["icon"], "check")
                 self.assertEqual(show.call_args_list[1].kwargs["icon"], "warning")
