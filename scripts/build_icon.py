@@ -6,7 +6,7 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from audiocoder.app_icon import create_icon_image
+from audiocoder.app_icon import ICO_SIZES, create_icon_image
 
 
 def main():
@@ -14,9 +14,7 @@ def main():
     assets.mkdir(exist_ok=True)
     image = create_icon_image()
     image.save(assets / "app.png")
-    image.save(assets / "app.ico", sizes=[
-        (16, 16), (24, 24), (32, 32), (48, 48),
-        (64, 64), (128, 128), (256, 256)])
+    image.save(assets / "app.ico", sizes=ICO_SIZES)
     print("Created app.png and app.ico")
 
 
