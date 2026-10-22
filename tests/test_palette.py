@@ -33,7 +33,8 @@ class MutedPaletteTests(unittest.TestCase):
 
     def test_control_hierarchy_uses_light_secondary_surfaces(self):
         theme = json.loads(theme_path().read_text(encoding="utf-8"))
-        self.assertEqual(theme["CTkButton"]["border_width"], 1)
+        self.assertEqual(theme["CTkButton"]["border_width"], 2)
+        self.assertEqual(theme["CTkButton"]["corner_radius"], 6)
         # Previous theme made *every* control a dark blue block. Secondary
         # controls must instead have light surfaces and dark, legible labels.
         for surface in (BUTTON_SECONDARY[0], MENU_BG[0], CANCEL_BG[0]):
@@ -55,6 +56,13 @@ class MutedPaletteTests(unittest.TestCase):
         # Preserve a visible active control without making all buttons dark.
         self.assertNotEqual(BUTTON_SECONDARY, BUTTON_PRIMARY)
         self.assertNotEqual(MENU_BG, ACCENT)
+
+    def test_all_editor_setting_surfaces_share_identical_colors(self):
+        self.assertEqual(CARD, FADE_CARD)
+        self.assertEqual(CARD, ZOOM_ROW)
+        self.assertEqual(CARD_BORDER, FADE_BORDER)
+        self.assertEqual(CARD[0], "#FBFCFD")
+        self.assertEqual(CARD_BORDER[0], theme_color(CARD_BORDER, dark=False))
 
     def test_light_and_dark_components_have_distinct_quiet_palette(self):
         for colors in (WINDOW, EDITOR, CARD, FADE_CARD, ZOOM_ROW,
