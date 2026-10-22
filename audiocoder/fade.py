@@ -21,29 +21,52 @@ FADE_CURVES = {
 FADE_OPTIONS = {"none": "Нет", **FADE_CURVES}
 
 
-def fade_filtergraph(duration: float, seconds: float, curve_in: str,
-                     curve_out: str, *, mode: str = "selection") -> str | None:
-    """Build the same FFmpeg afade chain for export and FFplay previews.
+def effective_fade_durations(duration: float, seconds_in: float,
+                             seconds_out: float, curve_in: str,
+                             curve_out: str, *, mode: str = "selection"
+                             ) -> tuple[float, float]:
+    """Return non-overlapping fade durations, preserving unequal timings.
 
-    Full selection: symmetrical, non-overlapping fades. Left/right marker
-    snippets: only the corresponding edge is processed; the short preview
-    uses its own duration, since it starts a fresh FFplay timeline.
+    Fade-in auditions run to the right marker, so they must include the
+    selected fade-out too. Only the brief right-marker audition omits fade-in.
     """
     if mode not in ("selection", "left", "right"):
         raise ValueError("Неизвестный режим предпрослушивания.")
-    if (not math.isfinite(duration) or duration <= 0
-            or not math.isfinite(seconds) or seconds <= 0):
+    if (not all(math.isfinite(value) for value in
+                (duration, seconds_in, seconds_out))
+            or duration <= 0 or seconds_in <= 0 or seconds_out <= 0):
         raise ValueError("Некорректная длительность появления или затухания.")
     if curve_in not in FADE_OPTIONS or curve_out not in FADE_OPTIONS:
         raise ValueError("Неподдерживаемый алгоритм появления или затухания.")
-    effective = min(seconds, duration / 2 if mode == "selection" else duration)
+
+    fade_in = seconds_in if mode != "right" and curve_in != "none" else 0.0
+    fade_out = seconds_out if curve_out != "none" else 0.0
+    total = fade_in + fade_out
+    if total > duration:
+        # Shrink together, not each to duration/2, to keep their ratio.
+        ratio = duration / total
+        fade_in *= ratio
+        fade_out *= ratio
+    return fade_in, fade_out
+
+
+def fade_filtergraph(duration: float, seconds: float, curve_in: str,
+                     curve_out: str, *, mode: str = "selection",
+                     out_seconds: float | None = None) -> str | None:
+    """Construct FFmpeg fades shared by preview and export.
+
+    `seconds` is the fade-in duration; `out_seconds` is independent.
+    Omitting `out_seconds` preserves the original equal-duration API.
+    """
+    fade_in, fade_out = effective_fade_durations(
+        duration, seconds, seconds if out_seconds is None else out_seconds,
+        curve_in, curve_out, mode=mode)
     filters = []
-    if mode != "right" and curve_in != "none":
-        filters.append(f"afade=t=in:st=0:d={effective:.6f}:curve={curve_in}")
-    if mode != "left" and curve_out != "none":
-        start = max(0.0, duration - effective)
-        filters.append(
-            f"afade=t=out:st={start:.6f}:d={effective:.6f}:curve={curve_out}")
+    if fade_in:
+        filters.append(f"afade=t=in:st=0:d={fade_in:.6f}:curve={curve_in}")
+    if fade_out:
+        start = max(0.0, duration - fade_out)
+        filters.append(f"afade=t=out:st={start:.6f}:d={fade_out:.6f}:curve={curve_out}")
     return ",".join(filters) if filters else None
 
 
