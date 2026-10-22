@@ -131,6 +131,18 @@ class WaveformView(tk.Canvas):
         self.viewport.reset()
         self._view_changed()
 
+    def zoom_in(self):
+        self.viewport.zoom(1.4)
+        self._view_changed()
+
+    def zoom_out(self):
+        self.viewport.zoom(1 / 1.4)
+        self._view_changed()
+
+    def fit_selection(self):
+        self.viewport.fit_range(*self.selection)
+        self._view_changed()
+
     def set_peaks(self, peaks):
         self.peaks = tuple(clamp(float(p), 0.0, 1.0) for p in peaks)
         self.detail_peaks = None
