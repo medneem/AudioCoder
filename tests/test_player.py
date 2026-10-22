@@ -75,6 +75,29 @@ class PlaybackTests(unittest.TestCase):
             filters = cmd[cmd.index("-af") + 1]
             self.assertEqual(filters.count("afade="), 1)
 
+    def test_seeking_requires_zero_based_audio_timestamps_for_fades(self):
+        """FFplay retains source PTS after -ss; without asetpts right preview is mute."""
+        for mode, window in (
+            ("selection", PlaybackWindow(80, 100)),
+            ("left", PlaybackWindow(80, 85)),
+            ("right", PlaybackWindow(99, 100)),
+        ):
+            with self.subTest(mode=mode):
+                effects = PlaybackEffects(
+                    enabled=True, seconds=1, in_curve="log",
+                    out_curve="log", mode=mode)
+                command = ffplay_command(Path("song.flac"), window,
+                                         Path("ffplay"), effects)
+                self.assertIn("-af", command)
+                graph = command[command.index("-af") + 1]
+                self.assertTrue(
+                    graph.startswith("asetpts=PTS-STARTPTS,"),
+                    f"Seeked {mode} preview keeps nonzero timestamps: {graph}")
+                self.assertEqual(command[command.index("-ss") + 1],
+                                 f"{window.start:.6f}")
+                self.assertEqual(command[command.index("-t") + 1],
+                                 f"{window.duration:.6f}")
+
     def test_ffplay_command(self):
         cmd = ffplay_command(Path("Музыка.flac"), PlaybackWindow(189, 190), Path("ffplay"))
         self.assertEqual(cmd[cmd.index("-ss") + 1], "189.000000")
